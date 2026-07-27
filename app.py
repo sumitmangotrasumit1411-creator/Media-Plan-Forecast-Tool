@@ -51,119 +51,291 @@ ACOSTA_MUTED = "#6b7280"
 
 st.markdown("""
 <style>
-    /* ---- Acosta brand palette ---- */
-    :root {
-        --acosta-dark: #1a0a14;
-        --acosta-red:  #cc2200;
-        --acosta-grey: #f4f4f4;
-        --acosta-muted: #6b7280;
+    /* ── Google Font via system stack ── */
+    html, body, [class*="css"] {
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
     }
 
-    /* Sidebar background — matches logo dark bg */
-    [data-testid="stSidebar"] { background-color: #1a0a14 !important; }
+    /* ── Global page background ── */
+    .stApp { background: #f8f7f5 !important; }
+    .block-container { padding-top: 1.2rem !important; padding-bottom: 2rem !important; }
+
+    /* ════════════════════════════════════════
+       SIDEBAR
+    ════════════════════════════════════════ */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(175deg, #1a0a14 0%, #2d1020 100%) !important;
+        border-right: 1px solid rgba(204,34,0,0.3) !important;
+    }
     [data-testid="stSidebar"] * { color: #ffffff !important; }
     [data-testid="stSidebar"] .stMarkdown h1,
     [data-testid="stSidebar"] .stMarkdown h2,
-    [data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; }
-    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.15) !important; }
+    [data-testid="stSidebar"] .stMarkdown h3 {
+        color: #ffffff !important; letter-spacing: 0.4px;
+    }
+    [data-testid="stSidebar"] hr {
+        border: none !important;
+        border-top: 1px solid rgba(255,255,255,0.12) !important;
+        margin: 12px 0 !important;
+    }
 
-    /* File uploader — Browse files button text must be black & visible */
+    /* Sidebar sliders & selects accent */
+    [data-testid="stSidebar"] [data-baseweb="slider"] [data-testid="stSliderThumb"] {
+        background: #cc2200 !important;
+    }
+
+    /* File uploader dropzone */
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-        background-color: #ffffff !important;
-        border: 2px dashed #cc2200 !important;
-        border-radius: 6px !important;
+        background: rgba(255,255,255,0.97) !important;
+        border: 2px dashed rgba(204,34,0,0.7) !important;
+        border-radius: 8px !important;
+        transition: border-color 0.2s;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]:hover {
+        border-color: #cc2200 !important;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
         color: #1a0a14 !important;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
-        background-color: #1a0a14 !important;
+        background: #1a0a14 !important;
         color: #ffffff !important;
-        border-radius: 4px !important;
-        font-weight: 600 !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        font-size: 12px !important;
+        padding: 6px 14px !important;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button * {
         color: #ffffff !important;
     }
 
-    /* Header banner */
+    /* ════════════════════════════════════════
+       HEADER BANNER
+    ════════════════════════════════════════ */
     .acosta-header {
-        background: #1a0a14;
-        padding: 16px 24px;
-        border-radius: 8px;
-        margin-bottom: 20px;
+        background: linear-gradient(135deg, #1a0a14 60%, #3a1020 100%);
+        padding: 20px 28px;
+        border-radius: 12px;
+        margin-bottom: 24px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 3px solid #cc2200;
-    }
-    .acosta-header-right { text-align: right; }
-    .acosta-header-sub {
-        font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 6px;
-    }
-    .acosta-badge {
-        background: #cc2200; color: #ffffff;
-        font-size: 11px; font-weight: 700;
-        padding: 4px 12px; border-radius: 20px;
-        white-space: nowrap; display: inline-block;
-    }
-    .acosta-created-by {
-        font-size: 11px; color: rgba(255,255,255,0.5);
-        margin-top: 4px;
+        border-bottom: 4px solid #cc2200;
+        box-shadow: 0 4px 20px rgba(26,10,20,0.18);
     }
 
-    /* Metric cards */
+    /* ════════════════════════════════════════
+       METRIC CARDS
+    ════════════════════════════════════════ */
     .metric-card {
-        background: #f9f9f9;
-        border: 1px solid #e5e7eb;
-        border-top: 3px solid #1a0a14;
-        border-radius: 6px;
-        padding: 16px 20px;
-        margin: 4px 0;
+        background: #ffffff;
+        border: 1px solid #ebebeb;
+        border-radius: 10px;
+        padding: 18px 20px 14px;
+        margin: 6px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        position: relative;
+        overflow: hidden;
+        transition: box-shadow 0.2s;
     }
-    .metric-label { font-size: 11px; color: #6b7280; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
-    .metric-value { font-size: 22px; font-weight: 800; color: #1a0a14; }
-    .metric-delta { font-size: 12px; color: #cc2200; font-weight: 500; }
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #1a0a14, #cc2200);
+        border-radius: 10px 10px 0 0;
+    }
+    .metric-label {
+        font-size: 10px;
+        color: #9ca3af;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 6px;
+    }
+    .metric-value {
+        font-size: 24px;
+        font-weight: 800;
+        color: #1a0a14;
+        line-height: 1.2;
+    }
+    .metric-delta {
+        font-size: 11px;
+        color: #cc2200;
+        font-weight: 600;
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
 
-    /* Section headers */
+    /* ════════════════════════════════════════
+       SECTION HEADERS
+    ════════════════════════════════════════ */
     .section-header {
-        font-size: 17px; font-weight: 700; color: #1a0a14;
-        border-bottom: 3px solid #cc2200; padding-bottom: 6px;
-        margin: 28px 0 16px 0;
+        font-size: 16px;
+        font-weight: 800;
+        color: #1a0a14;
+        margin: 32px 0 14px 0;
+        padding: 10px 16px;
+        background: linear-gradient(90deg, rgba(26,10,20,0.06) 0%, transparent 100%);
+        border-left: 5px solid #cc2200;
+        border-radius: 0 6px 6px 0;
+        letter-spacing: 0.2px;
     }
 
-    /* Recommendation cards */
+    /* ════════════════════════════════════════
+       TABS
+    ════════════════════════════════════════ */
+    .stTabs [data-baseweb="tab-list"] {
+        background: #ffffff;
+        border-radius: 10px 10px 0 0;
+        padding: 4px 4px 0;
+        border-bottom: 2px solid #ebebeb;
+        gap: 2px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 13px;
+        font-weight: 600;
+        color: #6b7280;
+        padding: 10px 18px;
+        border-radius: 8px 8px 0 0;
+        transition: all 0.15s;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #1a0a14 !important;
+        background: rgba(26,10,20,0.04) !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #cc2200 !important;
+        background: rgba(204,34,0,0.06) !important;
+        border-bottom: 3px solid #cc2200 !important;
+        font-weight: 700 !important;
+    }
+    .stTabs [data-baseweb="tab-panel"] {
+        background: #ffffff;
+        border-radius: 0 0 10px 10px;
+        padding: 20px 4px 4px;
+        border: 1px solid #ebebeb;
+        border-top: none;
+    }
+
+    /* ════════════════════════════════════════
+       RECOMMENDATION & WARNING CARDS
+    ════════════════════════════════════════ */
     .reco-card {
-        background: #fdf5f0;
-        border-left: 4px solid #1a0a14;
-        padding: 12px 16px;
-        border-radius: 4px;
-        margin: 8px 0;
+        background: linear-gradient(135deg, #fdfaf8 0%, #fff5f0 100%);
+        border: 1px solid #f0e8e4;
+        border-left: 5px solid #1a0a14;
+        padding: 14px 18px;
+        border-radius: 0 8px 8px 0;
+        margin: 10px 0;
+        font-size: 14px;
+        line-height: 1.65;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
     }
     .warning-card {
-        background: #fff0f0;
-        border-left: 4px solid #cc2200;
-        padding: 12px 16px;
-        border-radius: 4px;
-        margin: 8px 0;
+        background: linear-gradient(135deg, #fff8f8 0%, #fff0f0 100%);
+        border: 1px solid #fce8e8;
+        border-left: 5px solid #cc2200;
+        padding: 14px 18px;
+        border-radius: 0 8px 8px 0;
+        margin: 10px 0;
+        font-size: 14px;
+        line-height: 1.65;
+        box-shadow: 0 2px 6px rgba(204,34,0,0.06);
     }
 
-    /* Tabs */
-    .stTabs [data-baseweb="tab"] { font-size: 14px; font-weight: 600; }
-    .stTabs [aria-selected="true"] { color: #cc2200 !important; border-bottom-color: #cc2200 !important; }
+    /* ════════════════════════════════════════
+       DATA TABLES
+    ════════════════════════════════════════ */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px !important;
+        overflow: hidden !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+    }
 
-    /* Footer */
+    /* ════════════════════════════════════════
+       DOWNLOAD BUTTON
+    ════════════════════════════════════════ */
+    [data-testid="stDownloadButton"] button {
+        background: linear-gradient(135deg, #1a0a14, #3a1020) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        padding: 10px 24px !important;
+        box-shadow: 0 4px 12px rgba(26,10,20,0.25) !important;
+        transition: all 0.2s !important;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        box-shadow: 0 6px 18px rgba(26,10,20,0.35) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* ════════════════════════════════════════
+       EXPANDER
+    ════════════════════════════════════════ */
+    [data-testid="stExpander"] {
+        border: 1px solid #ebebeb !important;
+        border-radius: 8px !important;
+        background: #ffffff !important;
+    }
+
+    /* ════════════════════════════════════════
+       SUCCESS / WARNING / INFO BANNERS
+    ════════════════════════════════════════ */
+    [data-testid="stAlert"] {
+        border-radius: 8px !important;
+        font-size: 13px !important;
+    }
+
+    /* ════════════════════════════════════════
+       FOOTER
+    ════════════════════════════════════════ */
     .acosta-footer {
-        margin-top: 40px;
-        padding: 16px 0 8px;
-        border-top: 2px solid #1a0a14;
+        margin-top: 48px;
+        padding: 20px 0 12px;
+        border-top: 1px solid #e5e7eb;
         text-align: center;
-        font-size: 15px;
-        color: #4b5563;
-        line-height: 1.8;
+        font-size: 13px;
+        color: #9ca3af;
+        line-height: 2;
     }
-    .acosta-footer strong { color: #1a0a14; }
+    .acosta-footer strong { color: #1a0a14; font-weight: 700; }
     .acosta-footer a { color: #cc2200; text-decoration: none; font-weight: 600; }
+
+    /* ════════════════════════════════════════
+       LANDING PAGE WELCOME BOX
+    ════════════════════════════════════════ */
+    .welcome-box {
+        background: #ffffff;
+        border: 1px solid #ebebeb;
+        border-radius: 12px;
+        padding: 28px 32px;
+        margin: 16px 0;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .welcome-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 10px 0;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .welcome-step:last-child { border-bottom: none; }
+    .step-icon {
+        min-width: 36px; height: 36px;
+        background: linear-gradient(135deg, #1a0a14, #cc2200);
+        color: #fff;
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 15px;
+    }
+    .step-text strong { font-size: 14px; color: #1a0a14; }
+    .step-text span { font-size: 13px; color: #6b7280; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1042,25 +1214,48 @@ def main():
     ads_file, vendor_file, growth_options, channel_split = sidebar()
 
     if not ads_file and not vendor_file:
-        st.info("👈 Upload your reports using the sidebar to get started.")
         st.markdown("""
-        ### What this tool does:
-        1. **Parses** your Amazon Advertising + Vendor Central reports (CSV or XLSX)
-        2. **Extracts** key metrics: ACOS, ROAS, CTR, CPC, ordered revenue, ASIN performance
-        3. **Models growth scenarios** — e.g. +10% total sales — and recommends optimal ad spend
-        4. **Allocates budget** across Sponsored Products, Brands & Display
-        5. **Recommends** which campaigns to increase budgets on, based on efficiency (ROAS)
-        6. **Exports** a full Excel media plan workbook
-
-        ### Reports you need:
-        | Report | Source | Export format |
-        |--------|--------|--------------|
-        | Amazon Advertising Report | Amazon Ads Console → Reports → Sponsored Products/Brands/Display | CSV or XLSX |
-        | ASIN Sales Report | Vendor Central → Analytics → Sales Diagnostics | CSV or XLSX |
-
-        > **Tip:** You can use just one report — the tool adapts if only one is uploaded.
-        """)
-        # Footer on landing page
+        <div class="welcome-box">
+            <div style="font-size:20px; font-weight:800; color:#1a0a14; margin-bottom:20px;">
+                👋 Welcome — Upload your reports to get started
+            </div>
+            <div class="welcome-step">
+                <div class="step-icon">1</div>
+                <div class="step-text">
+                    <strong>Upload your Amazon Advertising Report</strong>
+                    <span>Ads Console → Reports → Sponsored Products / Brands / Display &nbsp;(CSV or XLSX, up to 2GB)</span>
+                </div>
+            </div>
+            <div class="welcome-step">
+                <div class="step-icon">2</div>
+                <div class="step-text">
+                    <strong>Upload your Vendor Central ASIN Sales Report</strong>
+                    <span>Vendor Central → Analytics → Sales Diagnostics &nbsp;(CSV or XLSX)</span>
+                </div>
+            </div>
+            <div class="welcome-step">
+                <div class="step-icon">3</div>
+                <div class="step-text">
+                    <strong>Get 6 insight tabs instantly</strong>
+                    <span>Key Metrics &nbsp;·&nbsp; Search Term Intelligence &nbsp;·&nbsp; Product Intelligence &nbsp;·&nbsp; Trend Analysis &nbsp;·&nbsp; Forecast &nbsp;·&nbsp; Recommendations</span>
+                </div>
+            </div>
+            <div class="welcome-step">
+                <div class="step-icon">4</div>
+                <div class="step-text">
+                    <strong>Model growth scenarios</strong>
+                    <span>+10%, +20%, +30% and custom — get recommended ad spend, channel split, and per-campaign budget actions</span>
+                </div>
+            </div>
+            <div class="welcome-step">
+                <div class="step-icon">5</div>
+                <div class="step-text">
+                    <strong>Download a full Excel Media Plan</strong>
+                    <span>5-sheet workbook — Executive Summary, Scenarios, Campaign Recommendations, Campaign Performance, ASIN Analysis</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         st.markdown("""
         <div class="acosta-footer">
             Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
