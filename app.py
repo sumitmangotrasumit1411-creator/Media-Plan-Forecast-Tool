@@ -60,14 +60,19 @@ st.markdown("""
     /* ── Page background ── */
     .stApp { background: #f0f2ff !important; }
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 0 !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
         padding-bottom: 2rem !important;
-        max-width: 100% !important;
     }
-    /* Header — full width, proper rounded corners all sides */
+    /* Header — full-width banner, sits right at the top */
     .tool-header {
         margin-top: 0 !important;
-        border-radius: 14px !important;
+        margin-left: -1rem !important;
+        margin-right: -1rem !important;
+        margin-bottom: 28px !important;
+        border-radius: 0 !important;
+        padding: 32px 40px !important;
     }
 
     /* ════════════════════════════════════
