@@ -40,60 +40,76 @@ def run_forecast(
     custom_channel_split: Optional[dict] = None,
     target_acos_override: Optional[float] = None,
     campaign_df: Optional[pd.DataFrame] = None,
+    # Custom target overrides — any one of these pins that metric directly
+    override_target_revenue: Optional[float] = None,
+    override_ad_spend: Optional[float] = None,
+    override_ad_sales: Optional[float] = None,
+    override_roas: Optional[float] = None,
+    override_tacos: Optional[float] = None,
 ) -> dict:
     """
     Generate a media plan forecast for a given growth target.
 
-    Parameters
-    ----------
-    total_ordered_revenue : float — current total sales (Vendor Central)
-    total_ad_spend        : float — current ad spend
-    total_ad_sales        : float — current ad-attributed sales
-    growth_pct            : float — desired growth e.g. 10 for +10%
-    custom_channel_split  : dict  — override default channel weights
-    target_acos_override  : float — force a specific target ACOS %
-    campaign_df           : pd.DataFrame — campaign-level breakdown for top-N reco
-
-    Returns a dict with all forecast values.
+    Custom overrides (override_*) take priority over growth_pct math.
+    Resolution order when multiple overrides supplied:
+      1. override_target_revenue  — sets target revenue directly
+      2. override_ad_sales        — pins target ad-attributed sales
+      3. override_roas            — derives spend from ad sales / roas
+      4. override_tacos           — derives spend from revenue * tacos%
+      5. override_ad_spend        — pins recommended spend directly
+    Any metric not pinned is derived from the others.
     """
     channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
 
     # ---- Baseline metrics ------------------------------------------------
     baseline_revenue = total_ordered_revenue if total_ordered_revenue > 0 else total_ad_sales
-    current_acos = (total_ad_spend / total_ad_sales * 100) if total_ad_sales > 0 else None
+    current_acos  = (total_ad_spend / total_ad_sales * 100) if total_ad_sales > 0 else None
     current_tacos = (total_ad_spend / baseline_revenue * 100) if baseline_revenue > 0 else None
-    current_roas = (total_ad_sales / total_ad_spend) if total_ad_spend > 0 else None
+    current_roas  = (total_ad_sales / total_ad_spend) if total_ad_spend > 0 else None
 
-    # ---- Target revenue --------------------------------------------------
-    target_revenue = baseline_revenue * (1 + growth_pct / 100)
+    # ---- Step 1: resolve target_revenue ----------------------------------
+    if override_target_revenue and override_target_revenue > 0:
+        target_revenue = override_target_revenue
+        growth_pct = round((target_revenue / baseline_revenue - 1) * 100, 2) if baseline_revenue > 0 else growth_pct
+    else:
+        target_revenue = baseline_revenue * (1 + growth_pct / 100)
+
     revenue_gap = target_revenue - baseline_revenue
 
-    # ---- Ad contribution estimate ----------------------------------------
-    # Heuristic: ads typically drive 30-60% of Amazon revenue; use actual ratio
-    if baseline_revenue > 0 and total_ad_sales > 0:
-        ad_contribution_ratio = min(total_ad_sales / baseline_revenue, 0.90)
+    # ---- Step 2: resolve target_ad_sales ---------------------------------
+    if override_ad_sales and override_ad_sales > 0:
+        target_ad_sales = override_ad_sales
     else:
-        ad_contribution_ratio = 0.40  # conservative default
+        if baseline_revenue > 0 and total_ad_sales > 0:
+            ad_contribution_ratio = min(total_ad_sales / baseline_revenue, 0.90)
+        else:
+            ad_contribution_ratio = 0.40
+        incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio
+        target_ad_sales = total_ad_sales + incremental_ad_sales_needed
 
-    # Additional ad-attributed sales needed to hit the gap
-    incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio
+    # ---- Step 3: resolve recommended_spend --------------------------------
+    if override_ad_spend and override_ad_spend > 0:
+        recommended_spend = override_ad_spend
+    elif override_roas and override_roas > 0:
+        # spend = ad_sales / ROAS
+        recommended_spend = target_ad_sales / override_roas
+    elif override_tacos and override_tacos > 0:
+        # spend = revenue * TACOS%
+        recommended_spend = target_revenue * (override_tacos / 100)
+    else:
+        spend_multiplier = 1 + (growth_pct / 10) * ACOS_EFFICIENCY_DECAY
+        effective_acos = (current_acos or 20.0) * spend_multiplier
+        if target_acos_override:
+            effective_acos = target_acos_override
+        recommended_spend = target_ad_sales * (effective_acos / 100)
 
-    # ---- Required spend --------------------------------------------------
-    # Apply efficiency decay: more spend → higher ACOS
-    spend_multiplier = 1 + (growth_pct / 10) * ACOS_EFFICIENCY_DECAY
-    effective_acos = (current_acos or 20.0) * spend_multiplier
-
-    if target_acos_override:
-        effective_acos = target_acos_override
-
-    # Recommended total spend
-    target_ad_sales = total_ad_sales + incremental_ad_sales_needed
-    recommended_spend = target_ad_sales * (effective_acos / 100)
-
-    # ---- Incremental budget needed ---------------------------------------
+    # ---- Derived metrics -------------------------------------------------
     incremental_spend = recommended_spend - total_ad_spend
+    effective_acos = (recommended_spend / target_ad_sales * 100) if target_ad_sales > 0 else 0
+    projected_roas = round(target_ad_sales / recommended_spend, 2) if recommended_spend > 0 else None
+    projected_tacos = round(recommended_spend / target_revenue * 100, 2) if target_revenue > 0 else None
 
-    # ---- Channel allocation ---------------------------------------------
+    # ---- Channel allocation ----------------------------------------------
     channel_allocation = {
         ch: {
             "budget": round(recommended_spend * weight, 2),
@@ -103,13 +119,7 @@ def run_forecast(
         for ch, weight in channel_split.items()
     }
 
-    # ---- ROAS projection ------------------------------------------------
-    projected_roas = round(target_ad_sales / recommended_spend, 2) if recommended_spend > 0 else None
-
-    # ---- TACOS projection -----------------------------------------------
-    projected_tacos = round(recommended_spend / target_revenue * 100, 2) if target_revenue > 0 else None
-
-    # ---- Top campaign recommendations -----------------------------------
+    # ---- Top campaign recommendations ------------------------------------
     campaign_recommendations = []
     if campaign_df is not None and not campaign_df.empty:
         campaign_recommendations = _recommend_campaigns(
@@ -118,25 +128,30 @@ def run_forecast(
 
     return {
         # Baseline
-        "baseline_revenue": round(baseline_revenue, 2),
-        "current_ad_spend": round(total_ad_spend, 2),
-        "current_ad_sales": round(total_ad_sales, 2),
-        "current_acos_pct": round(current_acos, 2) if current_acos else None,
-        "current_tacos_pct": round(current_tacos, 2) if current_tacos else None,
-        "current_roas": round(current_roas, 2) if current_roas else None,
+        "baseline_revenue":   round(baseline_revenue, 2),
+        "current_ad_spend":   round(total_ad_spend, 2),
+        "current_ad_sales":   round(total_ad_sales, 2),
+        "current_acos_pct":   round(current_acos, 2) if current_acos else None,
+        "current_tacos_pct":  round(current_tacos, 2) if current_tacos else None,
+        "current_roas":       round(current_roas, 2) if current_roas else None,
         # Targets
-        "growth_pct": growth_pct,
-        "target_revenue": round(target_revenue, 2),
-        "revenue_gap": round(revenue_gap, 2),
-        "target_ad_sales": round(target_ad_sales, 2),
-        "recommended_spend": round(recommended_spend, 2),
-        "incremental_spend": round(incremental_spend, 2),
+        "growth_pct":         growth_pct,
+        "target_revenue":     round(target_revenue, 2),
+        "revenue_gap":        round(revenue_gap, 2),
+        "target_ad_sales":    round(target_ad_sales, 2),
+        "recommended_spend":  round(recommended_spend, 2),
+        "incremental_spend":  round(incremental_spend, 2),
         "projected_acos_pct": round(effective_acos, 2),
-        "projected_roas": projected_roas,
+        "projected_roas":     projected_roas,
         "projected_tacos_pct": projected_tacos,
         # Allocation
-        "channel_allocation": channel_allocation,
-        "campaign_recommendations": campaign_recommendations,
+        "channel_allocation":        channel_allocation,
+        "campaign_recommendations":  campaign_recommendations,
+        # Track which overrides were used (for UI labelling)
+        "is_custom_scenario": any([
+            override_target_revenue, override_ad_spend,
+            override_ad_sales, override_roas, override_tacos,
+        ]),
     }
 
 

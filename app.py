@@ -533,7 +533,41 @@ def sidebar():
         "Sponsored Display": sd_pct / 100,
     }
 
-    return ads_file, vendor_file, growth_options, channel_split
+    # ---- Custom Target Overrides -----------------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🎯 Custom Scenario Targets")
+    st.sidebar.caption("Enter any target(s) below — leave at 0 to use growth % math instead.")
+
+    custom_target_revenue = st.sidebar.number_input(
+        "Target Revenue / OPS ($)", min_value=0.0, value=0.0, step=10000.0,
+        format="%.0f", help="Pin the exact total ordered revenue you want to hit",
+    )
+    custom_ad_spend = st.sidebar.number_input(
+        "Target Ad Spend ($)", min_value=0.0, value=0.0, step=1000.0,
+        format="%.0f", help="Pin the total ad budget you want to run with",
+    )
+    custom_ad_sales = st.sidebar.number_input(
+        "Target Ad Sales ($)", min_value=0.0, value=0.0, step=10000.0,
+        format="%.0f", help="Pin the ad-attributed sales you expect",
+    )
+    custom_roas = st.sidebar.number_input(
+        "Target ROAS", min_value=0.0, value=0.0, step=0.1,
+        format="%.2f", help="Pin the ROAS you want to achieve (derives spend from ad sales / ROAS)",
+    )
+    custom_tacos = st.sidebar.number_input(
+        "Target TACOS (%)", min_value=0.0, value=0.0, step=0.5,
+        format="%.2f", help="Pin the TACOS % (derives spend from revenue × TACOS%)",
+    )
+
+    custom_targets = {
+        "target_revenue": custom_target_revenue if custom_target_revenue > 0 else None,
+        "ad_spend":       custom_ad_spend       if custom_ad_spend > 0       else None,
+        "ad_sales":       custom_ad_sales       if custom_ad_sales > 0       else None,
+        "roas":           custom_roas           if custom_roas > 0           else None,
+        "tacos":          custom_tacos          if custom_tacos > 0          else None,
+    }
+
+    return ads_file, vendor_file, growth_options, channel_split, custom_targets
 
 
 # ---------------------------------------------------------------------------
@@ -696,7 +730,7 @@ def render_campaign_analysis(ads_df, vendor_df):
 # Tab 3 — Forecast & Media Plan
 # ---------------------------------------------------------------------------
 
-def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split, trend_df=None):
+def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split, trend_df=None, custom_targets=None):
     total_ordered_revenue = vendor_metrics.get("total_ordered_revenue", 0) if vendor_metrics else 0
     total_ad_spend = ads_metrics.get("total_spend", 0)
     total_ad_sales = ads_metrics.get("total_ad_sales", 0)
@@ -708,6 +742,9 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         st.warning("No revenue data found. Please check your reports.")
         return []
 
+    ct = custom_targets or {}
+
+    # ---- Run growth-% scenarios
     scenarios = run_multi_scenario(
         total_ordered_revenue=baseline_revenue,
         total_ad_spend=total_ad_spend,
@@ -717,66 +754,163 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
     )
 
+    # ---- Run custom scenario if any override is set
+    custom_scenario = None
+    has_custom = any(v is not None for v in ct.values())
+    if has_custom:
+        custom_scenario = run_forecast(
+            total_ordered_revenue=baseline_revenue,
+            total_ad_spend=total_ad_spend,
+            total_ad_sales=total_ad_sales,
+            growth_pct=0,
+            custom_channel_split=channel_split,
+            campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
+            override_target_revenue=ct.get("target_revenue"),
+            override_ad_spend=ct.get("ad_spend"),
+            override_ad_sales=ct.get("ad_sales"),
+            override_roas=ct.get("roas"),
+            override_tacos=ct.get("tacos"),
+        )
+
+        # Show which inputs drove the custom scenario
+        active = [k for k, v in ct.items() if v is not None]
+        label_map = {
+            "target_revenue": "Target Revenue",
+            "ad_spend": "Ad Spend",
+            "ad_sales": "Ad Sales",
+            "roas": "ROAS",
+            "tacos": "TACOS %",
+        }
+        active_labels = " · ".join(label_map[k] for k in active)
+        st.info(f"🎯 **Custom scenario active** — pinned inputs: **{active_labels}**. All other metrics derived.")
+
     # ---- Current achieved baseline row
     current_row = pd.DataFrame([{
-        "Growth Target":        "✅ Current (Achieved)",
-        "Target Revenue ($)":   baseline_revenue,
-        "Revenue Gap ($)":      0.0,
-        "Rec. Ad Spend ($)":    total_ad_spend,
+        "Growth Target":         "✅ Current (Achieved)",
+        "Target Revenue ($)":    baseline_revenue,
+        "Revenue Gap ($)":       0.0,
+        "Rec. Ad Spend ($)":     total_ad_spend,
         "Incremental Spend ($)": 0.0,
-        "Projected ACOS (%)":   ads_metrics.get("overall_acos") or 0,
-        "Projected ROAS":       ads_metrics.get("overall_roas") or 0,
-        "Projected TACOS (%)":  0.0,
+        "Projected ACOS (%)":    ads_metrics.get("overall_acos") or 0,
+        "Projected ROAS":        ads_metrics.get("overall_roas") or 0,
+        "Projected TACOS (%)":   0.0,
+        "Target Ad Sales ($)":   total_ad_sales,
     }])
 
-    # ---- Scenario Comparison Table — current first, then growth targets
+    # ---- Custom scenario row
+    custom_row = None
+    if custom_scenario:
+        custom_row = pd.DataFrame([{
+            "Growth Target":         f"🎯 Custom ({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)",
+            "Target Revenue ($)":    custom_scenario["target_revenue"],
+            "Revenue Gap ($)":       custom_scenario["revenue_gap"],
+            "Rec. Ad Spend ($)":     custom_scenario["recommended_spend"],
+            "Incremental Spend ($)": custom_scenario["incremental_spend"],
+            "Projected ACOS (%)":    custom_scenario["projected_acos_pct"] or 0,
+            "Projected ROAS":        custom_scenario["projected_roas"] or 0,
+            "Projected TACOS (%)":   custom_scenario["projected_tacos_pct"] or 0,
+            "Target Ad Sales ($)":   custom_scenario["target_ad_sales"],
+        }])
+
+    # ---- Scenario Comparison Table — current → custom → growth targets
     st.markdown('<div class="section-header">📋 Scenario Comparison</div>', unsafe_allow_html=True)
     sc_df = scenarios_to_dataframe(scenarios)
-    full_df = pd.concat([current_row, sc_df], ignore_index=True)
+    # Add Target Ad Sales column to sc_df
+    sc_df["Target Ad Sales ($)"] = [s["target_ad_sales"] for s in scenarios]
+
+    parts = [current_row]
+    if custom_row is not None:
+        parts.append(custom_row)
+    parts.append(sc_df)
+    full_df = pd.concat(parts, ignore_index=True)
+
+    # Reorder columns
+    col_order = [
+        "Growth Target", "Target Revenue ($)", "Target Ad Sales ($)",
+        "Revenue Gap ($)", "Rec. Ad Spend ($)", "Incremental Spend ($)",
+        "Projected ACOS (%)", "Projected ROAS", "Projected TACOS (%)",
+    ]
+    full_df = full_df[[c for c in col_order if c in full_df.columns]]
+
     fmt = {
-        "Target Revenue ($)":    "${:,.2f}",
-        "Revenue Gap ($)":       "${:,.2f}",
-        "Rec. Ad Spend ($)":     "${:,.2f}",
-        "Incremental Spend ($)": "${:,.2f}",
+        "Target Revenue ($)":    "${:,.0f}",
+        "Target Ad Sales ($)":   "${:,.0f}",
+        "Revenue Gap ($)":       "${:,.0f}",
+        "Rec. Ad Spend ($)":     "${:,.0f}",
+        "Incremental Spend ($)": "${:,.0f}",
         "Projected ACOS (%)":    "{:.2f}%",
         "Projected ROAS":        "{:.2f}x",
         "Projected TACOS (%)":   "{:.2f}%",
     }
-    st.dataframe(full_df.style.format(fmt).apply(
-        lambda row: ["background-color: #f0fdf4; font-weight:700" if row["Growth Target"] == "✅ Current (Achieved)"
-                     else "" for _ in row], axis=1
-    ), use_container_width=True)
+
+    def _row_style(row):
+        if row["Growth Target"] == "✅ Current (Achieved)":
+            return ["background-color:#f0fdf4; font-weight:700"] * len(row)
+        if str(row["Growth Target"]).startswith("🎯 Custom"):
+            return ["background-color:#eff6ff; font-weight:700; color:#1d4ed8"] * len(row)
+        return [""] * len(row)
+
+    st.dataframe(
+        full_df.style.format(fmt, na_rep="—").apply(_row_style, axis=1),
+        use_container_width=True,
+    )
 
     # ---- Chart: Revenue & Spend — Current first, then scenarios
     st.markdown('<div class="section-header">📈 Revenue vs Recommended Spend by Scenario</div>', unsafe_allow_html=True)
 
-    chart_labels = ["Current"] + [f"+{s['growth_pct']}%" for s in scenarios]
-    chart_revenue = [baseline_revenue] + [s["target_revenue"] for s in scenarios]
-    chart_spend   = [total_ad_spend]   + [s["recommended_spend"] for s in scenarios]
-    bar_colors_rev   = ["#6b7280"] + ["#1a0a14"] * len(scenarios)
-    bar_colors_spend = ["#9ca3af"] + ["#cc2200"] * len(scenarios)
+    # Build chart series — insert custom scenario between Current and growth scenarios
+    chart_labels  = ["Current"]
+    chart_revenue = [baseline_revenue]
+    chart_spend   = [total_ad_spend]
+    bar_colors_rev   = ["#6b7280"]
+    bar_colors_spend = ["#9ca3af"]
+
+    if custom_scenario:
+        cs_label = f"🎯 Custom\n({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)"
+        chart_labels.append(cs_label)
+        chart_revenue.append(custom_scenario["target_revenue"])
+        chart_spend.append(custom_scenario["recommended_spend"])
+        bar_colors_rev.append("#1d4ed8")
+        bar_colors_spend.append("#60a5fa")
+
+    chart_labels  += [f"+{s['growth_pct']}%" for s in scenarios]
+    chart_revenue += [s["target_revenue"] for s in scenarios]
+    chart_spend   += [s["recommended_spend"] for s in scenarios]
+    bar_colors_rev   += ["#1a0a14"] * len(scenarios)
+    bar_colors_spend += ["#4f46e5"] * len(scenarios)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=chart_labels, y=chart_revenue, name="Revenue", marker_color=bar_colors_rev))
+    fig.add_trace(go.Bar(x=chart_labels, y=chart_revenue, name="Revenue",  marker_color=bar_colors_rev))
     fig.add_trace(go.Bar(x=chart_labels, y=chart_spend,   name="Ad Spend", marker_color=bar_colors_spend))
     fig.update_layout(
         barmode="group", height=420,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(t=60, b=40),
-        yaxis_title="Amount ($)",
-        xaxis_title="Scenario",
-        shapes=[dict(type="line", x0=-0.5, x1=0.5, y0=0, y1=0,
-                     line=dict(color="rgba(0,0,0,0)", width=0))],
+        yaxis_title="Amount ($)", xaxis_title="Scenario",
     )
-    # Vertical divider between Current and forecast scenarios
     fig.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)",
                   annotation_text="Forecast →", annotation_position="top right")
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Chart: ACOS & ROAS — Current first, then scenarios
-    acos_labels = ["Current"] + [f"+{s['growth_pct']}%" for s in scenarios]
-    acos_values = [ads_metrics.get("overall_acos") or 0] + [s["projected_acos_pct"] for s in scenarios]
-    roas_values = [ads_metrics.get("overall_roas") or 0] + [s["projected_roas"] or 0 for s in scenarios]
+    # ---- Chart: ACOS & ROAS — Current → custom → scenarios
+    acos_labels = ["Current"]
+    acos_values = [ads_metrics.get("overall_acos") or 0]
+    roas_values = [ads_metrics.get("overall_roas") or 0]
+    acos_marker_colors = ["#9ca3af"]
+    roas_marker_colors = ["#9ca3af"]
+
+    if custom_scenario:
+        acos_labels.append(cs_label)
+        acos_values.append(custom_scenario["projected_acos_pct"] or 0)
+        roas_values.append(custom_scenario["projected_roas"] or 0)
+        acos_marker_colors.append("#1d4ed8")
+        roas_marker_colors.append("#1d4ed8")
+
+    acos_labels  += [f"+{s['growth_pct']}%" for s in scenarios]
+    acos_values  += [s["projected_acos_pct"] for s in scenarios]
+    roas_values  += [s["projected_roas"] or 0 for s in scenarios]
+    acos_marker_colors += ["#f97316"] * len(scenarios)
+    roas_marker_colors += ["#4f46e5"] * len(scenarios)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -784,8 +918,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_acos.add_trace(go.Scatter(
             x=acos_labels, y=acos_values,
             mode="lines+markers", name="ACOS (%)",
-            line=dict(color="#f97316", width=2), marker=dict(size=9),
-            marker_color=["#9ca3af"] + ["#f97316"] * len(scenarios),
+            line=dict(color="#f97316", width=2), marker=dict(size=9, color=acos_marker_colors),
         ))
         fig_acos.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
         fig_acos.update_layout(title="ACOS: Current → Projected", height=320, margin=dict(t=50, b=30),
@@ -797,17 +930,17 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_roas.add_trace(go.Scatter(
             x=acos_labels, y=roas_values,
             mode="lines+markers", name="ROAS",
-            line=dict(color="#4f46e5", width=2), marker=dict(size=9),
-            marker_color=["#9ca3af"] + ["#4f46e5"] * len(scenarios),
+            line=dict(color="#4f46e5", width=2), marker=dict(size=9, color=roas_marker_colors),
         ))
         fig_roas.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
         fig_roas.update_layout(title="ROAS: Current → Projected", height=320, margin=dict(t=50, b=30),
                                 xaxis_title="Scenario", yaxis_title="ROAS")
         st.plotly_chart(fig_roas, use_container_width=True)
 
-    # ---- Channel Allocation for primary scenario (+10%)
-    primary = next((s for s in scenarios if s["growth_pct"] == 10), scenarios[0])
-    st.markdown(f'<div class="section-header">💰 Channel Budget Allocation — +{primary["growth_pct"]}% Scenario</div>', unsafe_allow_html=True)
+    # ---- Channel Allocation — prefer custom scenario if active, else +10%
+    primary = custom_scenario if custom_scenario else next((s for s in scenarios if s["growth_pct"] == 10), scenarios[0])
+    primary_label = "Custom" if custom_scenario else f"+{primary['growth_pct']}%"
+    st.markdown(f'<div class="section-header">💰 Channel Budget Allocation — {primary_label} Scenario</div>', unsafe_allow_html=True)
 
     alloc_labels = list(primary["channel_allocation"].keys())
     alloc_budgets = [v["budget"] for v in primary["channel_allocation"].values()]
@@ -1463,7 +1596,7 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    ads_file, vendor_file, growth_options, channel_split = sidebar()
+    ads_file, vendor_file, growth_options, channel_split, custom_targets = sidebar()
 
     if not ads_file and not vendor_file:
         st.markdown("""
@@ -1626,7 +1759,7 @@ def main():
         if ads_df is not None or vendor_df is not None:
             scenarios = render_forecast(
                 ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split,
-                trend_df=trend_df,
+                trend_df=trend_df, custom_targets=custom_targets,
             )
 
     with tab6:
