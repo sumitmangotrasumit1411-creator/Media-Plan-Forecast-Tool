@@ -709,9 +709,6 @@ def main():
                 Amazon Media Plan Forecast Tool
             </div>
         </div>
-        <div class="acosta-header-right">
-            <div class="acosta-badge">Brand Ecommerce</div>
-        </div>
     </div>
     """, unsafe_allow_html=True)
 
