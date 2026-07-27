@@ -65,24 +65,41 @@ st.markdown("""
     label, .stSelectbox label, .stMultiSelect label,
     .stSlider label, .stNumberInput label { font-size: 14px !important; font-weight: 600 !important; }
 
-    /* ── Hide Streamlit toolbar clutter but keep sidebar toggle ── */
+    /* ── Hide Streamlit toolbar clutter ── */
     #MainMenu { visibility: hidden; }
     .stDeployButton { display: none !important; }
-    /* Hide the header bar itself but keep its height so toggle button stays */
     header[data-testid="stHeader"] {
         background: transparent !important;
         box-shadow: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
     }
-    /* Hide only the hamburger menu text & deploy items, not the toggle arrow */
-    header[data-testid="stHeader"] > div:first-child { visibility: hidden; }
-    /* Keep sidebar collapse/expand button visible */
-    button[data-testid="collapsedControl"],
-    button[kind="header"] {
+
+    /* ── Sidebar collapsed toggle — make it a big obvious button ── */
+    button[data-testid="collapsedControl"] {
         visibility: visible !important;
         display: flex !important;
+        width: 48px !important;
+        height: 48px !important;
         background: #4f46e5 !important;
-        border-radius: 50% !important;
-        color: #ffffff !important;
+        border-radius: 0 10px 10px 0 !important;
+        border: none !important;
+        box-shadow: 4px 0 16px rgba(79,70,229,0.4) !important;
+        top: 50% !important;
+        position: fixed !important;
+        left: 0 !important;
+        z-index: 9999 !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    button[data-testid="collapsedControl"] svg {
+        fill: #ffffff !important;
+        width: 22px !important;
+        height: 22px !important;
+    }
+    button[data-testid="collapsedControl"]:hover {
+        background: #f97316 !important;
+        box-shadow: 4px 0 20px rgba(249,115,22,0.5) !important;
     }
 
     /* ── Page background ── */
