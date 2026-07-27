@@ -335,13 +335,17 @@ st.markdown("""
     .tool-footer {
         margin-top: 48px;
         padding: 22px 0 14px;
-        border-top: 1px solid #e0e7ff;
+        border-top: 3px solid #4f46e5;
         text-align: center;
-        font-size: 15px;
-        color: #9ca3af;
+        font-size: 16px;
+        font-weight: 500;
+        color: #374151;
         line-height: 2;
+        background: linear-gradient(90deg, rgba(79,70,229,0.04) 0%, transparent 50%, rgba(249,115,22,0.04) 100%);
+        border-radius: 0 0 12px 12px;
+        letter-spacing: 0.2px;
     }
-    .tool-footer strong { color: #1e1b4b; font-weight: 700; }
+    .tool-footer strong { color: #1e1b4b; font-weight: 800; font-size: 17px; }
 
     /* ════════════════════════════════════
        WELCOME BOX
