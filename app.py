@@ -1304,6 +1304,14 @@ def main():
 
     if not ads_file and not vendor_file:
         st.markdown("""
+        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; font-size:16px; font-weight:700;
+                    padding:16px 28px; border-radius:10px; margin-bottom:20px; text-align:center;
+                    box-shadow:0 4px 16px rgba(79,70,229,0.35);">
+            👈 &nbsp; Click the <span style="color:#ffd700; font-size:20px; font-weight:900;">▶</span>
+            tab on the <strong>left edge</strong> of the screen to open the Upload Panel
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
         <div class="welcome-box">
             <div style="font-size:20px; font-weight:800; color:#1a0a14; margin-bottom:20px;">
                 👋 Welcome — Upload your reports to get started
