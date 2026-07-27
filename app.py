@@ -75,18 +75,18 @@ st.markdown("""
         min-height: 0 !important;
     }
 
-    /* ── Sidebar collapsed toggle — make it a big obvious button ── */
+    /* ── Sidebar collapsed toggle — fixed below browser URL bar ── */
     button[data-testid="collapsedControl"] {
         visibility: visible !important;
         display: flex !important;
-        width: 48px !important;
-        height: 48px !important;
+        width: 52px !important;
+        height: 52px !important;
         background: #4f46e5 !important;
-        border-radius: 0 10px 10px 0 !important;
+        border-radius: 0 12px 12px 0 !important;
         border: none !important;
-        box-shadow: 4px 0 16px rgba(79,70,229,0.4) !important;
-        top: 50% !important;
+        box-shadow: 4px 0 18px rgba(79,70,229,0.45) !important;
         position: fixed !important;
+        top: 80px !important;
         left: 0 !important;
         z-index: 9999 !important;
         align-items: center !important;
@@ -94,12 +94,13 @@ st.markdown("""
     }
     button[data-testid="collapsedControl"] svg {
         fill: #ffffff !important;
-        width: 22px !important;
-        height: 22px !important;
+        width: 24px !important;
+        height: 24px !important;
     }
     button[data-testid="collapsedControl"]:hover {
         background: #f97316 !important;
-        box-shadow: 4px 0 20px rgba(249,115,22,0.5) !important;
+        box-shadow: 4px 0 22px rgba(249,115,22,0.55) !important;
+        width: 58px !important;
     }
 
     /* ── Page background ── */
@@ -1303,14 +1304,6 @@ def main():
     ads_file, vendor_file, growth_options, channel_split = sidebar()
 
     if not ads_file and not vendor_file:
-        st.markdown("""
-        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; font-size:16px; font-weight:700;
-                    padding:16px 28px; border-radius:10px; margin-bottom:20px; text-align:center;
-                    box-shadow:0 4px 16px rgba(79,70,229,0.35);">
-            👈 &nbsp; Click the <span style="color:#ffd700; font-size:20px; font-weight:900;">▶</span>
-            tab on the <strong>left edge</strong> of the screen to open the Upload Panel
-        </div>
-        """, unsafe_allow_html=True)
         st.markdown("""
         <div class="welcome-box">
             <div style="font-size:20px; font-weight:800; color:#1a0a14; margin-bottom:20px;">
