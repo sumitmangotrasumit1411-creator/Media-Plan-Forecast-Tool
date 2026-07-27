@@ -59,7 +59,15 @@ st.markdown("""
 
     /* ── Page background ── */
     .stApp { background: #f0f2ff !important; }
-    .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
+    .block-container {
+        padding-top: 0 !important;
+        padding-bottom: 2rem !important;
+    }
+    /* Pull header flush to top, no gap */
+    .tool-header {
+        margin-top: -10px !important;
+        border-radius: 0 0 14px 14px !important;
+    }
 
     /* ════════════════════════════════════
        SIDEBAR  — deep indigo
