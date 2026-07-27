@@ -130,11 +130,12 @@ st.markdown("""
         padding: 16px 0 8px;
         border-top: 2px solid #1a0a14;
         text-align: center;
-        font-size: 12px;
-        color: #6b7280;
+        font-size: 15px;
+        color: #4b5563;
+        line-height: 1.8;
     }
     .acosta-footer strong { color: #1a0a14; }
-    .acosta-footer a { color: #cc2200; text-decoration: none; }
+    .acosta-footer a { color: #cc2200; text-decoration: none; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -186,9 +187,10 @@ def colour_acos(val):
 # ---------------------------------------------------------------------------
 
 def sidebar():
+    # Logo only — no name credit (moved to footer only)
     st.sidebar.markdown("""
     <div style="text-align:center; padding:16px 0 10px;">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="148" height="47">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="180" height="57">
           <rect width="220" height="70" rx="4" fill="#1a0a14"/>
           <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
           <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
@@ -197,25 +199,33 @@ def sidebar():
           <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
                 font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
         </svg>
-        <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:8px;">
-            Sumeet Mangotra &#183; Brand Ecommerce Manager
-        </div>
     </div>
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📂 Upload Reports")
     st.sidebar.markdown("---")
 
+    # Fix 5: wider label + explicit button label so "Browse files" is clearly visible
+    st.sidebar.markdown(
+        "<p style='color:#fff; font-size:13px; font-weight:600; margin-bottom:4px;'>Amazon Advertising Report</p>",
+        unsafe_allow_html=True,
+    )
     ads_file = st.sidebar.file_uploader(
         "Amazon Advertising Report",
         type=["csv", "xlsx", "xls"],
         help="Export from Amazon Ads Console: Campaign Manager → Reports (up to 2GB)",
+        label_visibility="collapsed",
     )
 
+    st.sidebar.markdown(
+        "<p style='color:#fff; font-size:13px; font-weight:600; margin-bottom:4px; margin-top:12px;'>Vendor Central ASIN Sales Report</p>",
+        unsafe_allow_html=True,
+    )
     vendor_file = st.sidebar.file_uploader(
         "Vendor Central ASIN Sales Report",
         type=["csv", "xlsx", "xls"],
         help="Export from Vendor Central → Analytics → Sales Diagnostics (up to 2GB)",
+        label_visibility="collapsed",
     )
 
     st.sidebar.markdown("---")
@@ -668,7 +678,7 @@ def main():
     st.markdown("""
     <div class="acosta-header">
         <div style="display:flex; align-items:center; gap:20px;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="140" height="45">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="180" height="57">
               <rect width="220" height="70" rx="4" fill="#1a0a14"/>
               <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
               <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
@@ -688,7 +698,6 @@ def main():
         </div>
         <div class="acosta-header-right">
             <div class="acosta-badge">Brand Ecommerce</div>
-            <div class="acosta-created-by">Sumeet Mangotra, Brand Ecommerce Manager</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -717,7 +726,7 @@ def main():
         # Footer on landing page
         st.markdown("""
         <div class="acosta-footer">
-            <strong>Acosta</strong> · Amazon Media Plan Forecast Tool ·
+            <strong>Acosta Group</strong> &nbsp;&#183;&nbsp; Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
             Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager ·
             <a href="https://www.acosta.com" target="_blank">acosta.com</a>
         </div>
@@ -829,8 +838,8 @@ def main():
     # ---- Acosta Footer --------------------------------------------------------
     st.markdown("""
     <div class="acosta-footer">
-        <strong>Acosta</strong> &nbsp;·&nbsp; Amazon Media Plan Forecast Tool &nbsp;·&nbsp;
-        Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager &nbsp;·&nbsp;
+        <strong>Acosta Group</strong> &nbsp;&#183;&nbsp; Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
+        Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager &nbsp;&#183;&nbsp;
         <a href="https://www.acosta.com" target="_blank">acosta.com</a>
     </div>
     """, unsafe_allow_html=True)
