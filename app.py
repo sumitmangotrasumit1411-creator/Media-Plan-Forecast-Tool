@@ -34,71 +34,64 @@ from trends import build_trend_df, trend_summary, ad_product_trend
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Acosta | Amazon Media Plan Forecast",
+    page_title="Amazon Media Plan Forecast Tool",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------------------
-# Acosta Brand Colors (from official logo)
-# DARK BG  #1a0a14  |  RED  #cc2200  |  WHITE #ffffff  |  GREY #f4f4f4
+# Vibrant Palette — Indigo + Orange
+# PRIMARY  #4f46e5  |  ACCENT  #f97316  |  BG  #f0f2ff  |  DARK  #1e1b4b
 # ---------------------------------------------------------------------------
-ACOSTA_DARK  = "#1a0a14"
-ACOSTA_RED   = "#cc2200"
-ACOSTA_GREY  = "#f4f4f4"
-ACOSTA_MUTED = "#6b7280"
+C_PRIMARY = "#4f46e5"   # vivid indigo
+C_ACCENT  = "#f97316"   # warm orange
+C_DARK    = "#1e1b4b"   # deep indigo-navy
+C_BG      = "#f0f2ff"   # very light lavender page bg
+C_WHITE   = "#ffffff"
+C_MUTED   = "#6b7280"
 
 st.markdown("""
 <style>
-    /* ── Google Font via system stack ── */
     html, body, [class*="css"] {
         font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
     }
 
-    /* ── Global page background ── */
-    .stApp { background: #f8f7f5 !important; }
-    .block-container { padding-top: 1.2rem !important; padding-bottom: 2rem !important; }
+    /* ── Page background ── */
+    .stApp { background: #f0f2ff !important; }
+    .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
 
-    /* ════════════════════════════════════════
-       SIDEBAR
-    ════════════════════════════════════════ */
+    /* ════════════════════════════════════
+       SIDEBAR  — deep indigo
+    ════════════════════════════════════ */
     [data-testid="stSidebar"] {
-        background: linear-gradient(175deg, #1a0a14 0%, #2d1020 100%) !important;
-        border-right: 1px solid rgba(204,34,0,0.3) !important;
+        background: linear-gradient(175deg, #1e1b4b 0%, #312e81 100%) !important;
+        border-right: 1px solid rgba(79,70,229,0.35) !important;
     }
     [data-testid="stSidebar"] * { color: #ffffff !important; }
     [data-testid="stSidebar"] .stMarkdown h1,
     [data-testid="stSidebar"] .stMarkdown h2,
-    [data-testid="stSidebar"] .stMarkdown h3 {
-        color: #ffffff !important; letter-spacing: 0.4px;
-    }
+    [data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; }
     [data-testid="stSidebar"] hr {
         border: none !important;
-        border-top: 1px solid rgba(255,255,255,0.12) !important;
-        margin: 12px 0 !important;
+        border-top: 1px solid rgba(255,255,255,0.15) !important;
+        margin: 10px 0 !important;
     }
 
-    /* Sidebar sliders & selects accent */
-    [data-testid="stSidebar"] [data-baseweb="slider"] [data-testid="stSliderThumb"] {
-        background: #cc2200 !important;
-    }
-
-    /* File uploader dropzone */
+    /* File uploader */
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-        background: rgba(255,255,255,0.97) !important;
-        border: 2px dashed rgba(204,34,0,0.7) !important;
+        background: rgba(255,255,255,0.96) !important;
+        border: 2px dashed rgba(249,115,22,0.7) !important;
         border-radius: 8px !important;
-        transition: border-color 0.2s;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]:hover {
-        border-color: #cc2200 !important;
+        border-color: #f97316 !important;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
-        color: #1a0a14 !important;
+        color: #1e1b4b !important;
     }
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
-        background: #1a0a14 !important;
+        background: #4f46e5 !important;
         color: #ffffff !important;
         border-radius: 6px !important;
         font-weight: 700 !important;
@@ -109,46 +102,64 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        HEADER BANNER
-    ════════════════════════════════════════ */
-    .acosta-header {
-        background: linear-gradient(135deg, #1a0a14 60%, #3a1020 100%);
-        padding: 20px 28px;
-        border-radius: 12px;
+    ════════════════════════════════════ */
+    .tool-header {
+        background: linear-gradient(120deg, #1e1b4b 0%, #4f46e5 60%, #7c3aed 100%);
+        padding: 22px 32px;
+        border-radius: 14px;
         margin-bottom: 24px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 4px solid #cc2200;
-        box-shadow: 0 4px 20px rgba(26,10,20,0.18);
+        border-bottom: 4px solid #f97316;
+        box-shadow: 0 6px 24px rgba(79,70,229,0.22);
+    }
+    .tool-header-title {
+        font-size: 22px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.2px;
+    }
+    .tool-header-sub {
+        font-size: 12px;
+        color: rgba(255,255,255,0.65);
+        margin-top: 4px;
+    }
+    .tool-header-badge {
+        background: #f97316;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 14px;
+        border-radius: 20px;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        METRIC CARDS
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     .metric-card {
         background: #ffffff;
-        border: 1px solid #ebebeb;
-        border-radius: 10px;
+        border: 1px solid #e0e7ff;
+        border-radius: 12px;
         padding: 18px 20px 14px;
         margin: 6px 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        box-shadow: 0 2px 10px rgba(79,70,229,0.08);
         position: relative;
         overflow: hidden;
-        transition: box-shadow 0.2s;
     }
     .metric-card::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 4px;
-        background: linear-gradient(90deg, #1a0a14, #cc2200);
-        border-radius: 10px 10px 0 0;
+        background: linear-gradient(90deg, #4f46e5, #f97316);
+        border-radius: 12px 12px 0 0;
     }
     .metric-label {
         font-size: 10px;
-        color: #9ca3af;
+        color: #6b7280;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.8px;
@@ -157,185 +168,182 @@ st.markdown("""
     .metric-value {
         font-size: 24px;
         font-weight: 800;
-        color: #1a0a14;
+        color: #1e1b4b;
         line-height: 1.2;
     }
     .metric-delta {
         font-size: 11px;
-        color: #cc2200;
+        color: #f97316;
         font-weight: 600;
-        margin-top: 4px;
-        display: flex;
-        align-items: center;
-        gap: 3px;
+        margin-top: 5px;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        SECTION HEADERS
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     .section-header {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 800;
-        color: #1a0a14;
-        margin: 32px 0 14px 0;
+        color: #1e1b4b;
+        margin: 28px 0 14px 0;
         padding: 10px 16px;
-        background: linear-gradient(90deg, rgba(26,10,20,0.06) 0%, transparent 100%);
-        border-left: 5px solid #cc2200;
-        border-radius: 0 6px 6px 0;
-        letter-spacing: 0.2px;
+        background: linear-gradient(90deg, rgba(79,70,229,0.07) 0%, transparent 100%);
+        border-left: 5px solid #f97316;
+        border-radius: 0 8px 8px 0;
+        letter-spacing: 0.1px;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        TABS
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     .stTabs [data-baseweb="tab-list"] {
         background: #ffffff;
         border-radius: 10px 10px 0 0;
         padding: 4px 4px 0;
-        border-bottom: 2px solid #ebebeb;
+        border-bottom: 2px solid #e0e7ff;
         gap: 2px;
     }
     .stTabs [data-baseweb="tab"] {
         font-size: 13px;
         font-weight: 600;
         color: #6b7280;
-        padding: 10px 18px;
+        padding: 10px 16px;
         border-radius: 8px 8px 0 0;
         transition: all 0.15s;
     }
     .stTabs [data-baseweb="tab"]:hover {
-        color: #1a0a14 !important;
-        background: rgba(26,10,20,0.04) !important;
+        color: #4f46e5 !important;
+        background: rgba(79,70,229,0.05) !important;
     }
     .stTabs [aria-selected="true"] {
-        color: #cc2200 !important;
-        background: rgba(204,34,0,0.06) !important;
-        border-bottom: 3px solid #cc2200 !important;
+        color: #4f46e5 !important;
+        background: rgba(79,70,229,0.07) !important;
+        border-bottom: 3px solid #4f46e5 !important;
         font-weight: 700 !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
         background: #ffffff;
-        border-radius: 0 0 10px 10px;
+        border-radius: 0 0 12px 12px;
         padding: 20px 4px 4px;
-        border: 1px solid #ebebeb;
+        border: 1px solid #e0e7ff;
         border-top: none;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        RECOMMENDATION & WARNING CARDS
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     .reco-card {
-        background: linear-gradient(135deg, #fdfaf8 0%, #fff5f0 100%);
-        border: 1px solid #f0e8e4;
-        border-left: 5px solid #1a0a14;
+        background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+        border: 1px solid #ddd6fe;
+        border-left: 5px solid #4f46e5;
         padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
+        border-radius: 0 10px 10px 0;
         margin: 10px 0;
         font-size: 14px;
         line-height: 1.65;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        box-shadow: 0 2px 6px rgba(79,70,229,0.07);
     }
     .warning-card {
-        background: linear-gradient(135deg, #fff8f8 0%, #fff0f0 100%);
-        border: 1px solid #fce8e8;
-        border-left: 5px solid #cc2200;
+        background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+        border: 1px solid #fed7aa;
+        border-left: 5px solid #f97316;
         padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
+        border-radius: 0 10px 10px 0;
         margin: 10px 0;
         font-size: 14px;
         line-height: 1.65;
-        box-shadow: 0 2px 6px rgba(204,34,0,0.06);
+        box-shadow: 0 2px 6px rgba(249,115,22,0.08);
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        DATA TABLES
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     [data-testid="stDataFrame"] {
         border-radius: 10px !important;
         overflow: hidden !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+        box-shadow: 0 2px 8px rgba(79,70,229,0.08) !important;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        DOWNLOAD BUTTON
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #1a0a14, #3a1020) !important;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
         font-weight: 700 !important;
         font-size: 14px !important;
         padding: 10px 24px !important;
-        box-shadow: 0 4px 12px rgba(26,10,20,0.25) !important;
+        box-shadow: 0 4px 14px rgba(79,70,229,0.3) !important;
         transition: all 0.2s !important;
     }
     [data-testid="stDownloadButton"] button:hover {
-        box-shadow: 0 6px 18px rgba(26,10,20,0.35) !important;
+        box-shadow: 0 6px 20px rgba(79,70,229,0.4) !important;
         transform: translateY(-1px) !important;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        EXPANDER
-    ════════════════════════════════════════ */
+    ════════════════════════════════════ */
     [data-testid="stExpander"] {
-        border: 1px solid #ebebeb !important;
+        border: 1px solid #e0e7ff !important;
         border-radius: 8px !important;
         background: #ffffff !important;
     }
 
-    /* ════════════════════════════════════════
-       SUCCESS / WARNING / INFO BANNERS
-    ════════════════════════════════════════ */
+    /* ════════════════════════════════════
+       ALERTS
+    ════════════════════════════════════ */
     [data-testid="stAlert"] {
         border-radius: 8px !important;
         font-size: 13px !important;
     }
 
-    /* ════════════════════════════════════════
+    /* ════════════════════════════════════
        FOOTER
-    ════════════════════════════════════════ */
-    .acosta-footer {
+    ════════════════════════════════════ */
+    .tool-footer {
         margin-top: 48px;
         padding: 20px 0 12px;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid #e0e7ff;
         text-align: center;
         font-size: 13px;
         color: #9ca3af;
         line-height: 2;
     }
-    .acosta-footer strong { color: #1a0a14; font-weight: 700; }
-    .acosta-footer a { color: #cc2200; text-decoration: none; font-weight: 600; }
+    .tool-footer strong { color: #1e1b4b; font-weight: 700; }
 
-    /* ════════════════════════════════════════
-       LANDING PAGE WELCOME BOX
-    ════════════════════════════════════════ */
+    /* ════════════════════════════════════
+       WELCOME BOX
+    ════════════════════════════════════ */
     .welcome-box {
         background: #ffffff;
-        border: 1px solid #ebebeb;
-        border-radius: 12px;
-        padding: 28px 32px;
+        border: 1px solid #e0e7ff;
+        border-radius: 14px;
+        padding: 32px 36px;
         margin: 16px 0;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        box-shadow: 0 4px 16px rgba(79,70,229,0.1);
     }
     .welcome-step {
         display: flex;
         align-items: flex-start;
-        gap: 14px;
-        padding: 10px 0;
+        gap: 16px;
+        padding: 12px 0;
         border-bottom: 1px solid #f3f4f6;
     }
     .welcome-step:last-child { border-bottom: none; }
     .step-icon {
-        min-width: 36px; height: 36px;
-        background: linear-gradient(135deg, #1a0a14, #cc2200);
+        min-width: 38px; height: 38px;
+        background: linear-gradient(135deg, #4f46e5, #f97316);
         color: #fff;
-        border-radius: 8px;
+        border-radius: 10px;
         display: flex; align-items: center; justify-content: center;
         font-weight: 800; font-size: 15px;
+        box-shadow: 0 2px 8px rgba(79,70,229,0.25);
     }
-    .step-text strong { font-size: 14px; color: #1a0a14; }
-    .step-text span { font-size: 13px; color: #6b7280; display: block; }
+    .step-text strong { font-size: 14px; color: #1e1b4b; }
+    .step-text span { font-size: 13px; color: #6b7280; display: block; margin-top: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -387,18 +395,14 @@ def colour_acos(val):
 # ---------------------------------------------------------------------------
 
 def sidebar():
-    # Logo only — no name credit (moved to footer only)
     st.sidebar.markdown("""
-    <div style="text-align:center; padding:16px 0 10px;">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="180" height="57">
-          <rect width="220" height="70" rx="4" fill="#1a0a14"/>
-          <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
-          <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
-          <rect x="155" y="17" width="9" height="9" fill="#8b1a1a"/>
-          <rect x="164" y="17" width="9" height="9" fill="#cc2200"/>
-          <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
-                font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
-        </svg>
+    <div style="text-align:center; padding:18px 0 14px;">
+        <div style="font-size:22px; font-weight:900; color:#ffffff; letter-spacing:1px;">
+            📊 Media Plan Tool
+        </div>
+        <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:4px; letter-spacing:0.5px;">
+            AMAZON ADVERTISING ANALYTICS
+        </div>
     </div>
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
@@ -578,9 +582,9 @@ def render_campaign_analysis(ads_df, vendor_df):
         if chart_cols:
             fig = go.Figure()
             if "spend" in top10.columns:
-                fig.add_trace(go.Bar(x=top10[name_col], y=top10["spend"], name="Ad Spend", marker_color="#293C5B"))
+                fig.add_trace(go.Bar(x=top10[name_col], y=top10["spend"], name="Ad Spend", marker_color="#4f46e5"))
             if "ad_sales" in top10.columns:
-                fig.add_trace(go.Bar(x=top10[name_col], y=top10["ad_sales"], name="Ad Sales", marker_color="#e71d36"))
+                fig.add_trace(go.Bar(x=top10[name_col], y=top10["ad_sales"], name="Ad Sales", marker_color="#f97316"))
             fig.update_layout(
                 barmode="group", title="Top 10 Campaigns: Spend vs Sales",
                 xaxis_tickangle=-35, height=380,
@@ -714,8 +718,8 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_acos.add_trace(go.Scatter(
             x=acos_labels, y=acos_values,
             mode="lines+markers", name="ACOS (%)",
-            line=dict(color="#cc2200", width=2), marker=dict(size=9),
-            marker_color=["#6b7280"] + ["#cc2200"] * len(scenarios),
+            line=dict(color="#f97316", width=2), marker=dict(size=9),
+            marker_color=["#9ca3af"] + ["#f97316"] * len(scenarios),
         ))
         fig_acos.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
         fig_acos.update_layout(title="ACOS: Current → Projected", height=320, margin=dict(t=50, b=30),
@@ -727,8 +731,8 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_roas.add_trace(go.Scatter(
             x=acos_labels, y=roas_values,
             mode="lines+markers", name="ROAS",
-            line=dict(color="#1a0a14", width=2), marker=dict(size=9),
-            marker_color=["#6b7280"] + ["#1a0a14"] * len(scenarios),
+            line=dict(color="#4f46e5", width=2), marker=dict(size=9),
+            marker_color=["#9ca3af"] + ["#4f46e5"] * len(scenarios),
         ))
         fig_roas.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
         fig_roas.update_layout(title="ROAS: Current → Projected", height=320, margin=dict(t=50, b=30),
@@ -756,8 +760,8 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
 
     with ch_col2:
         fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_budgets, name="Total Budget", marker_color="#293C5B"))
-        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_incr, name="Incremental Increase", marker_color="#e71d36"))
+        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_budgets, name="Total Budget", marker_color="#4f46e5"))
+        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_incr, name="Incremental Increase", marker_color="#f97316"))
         fig_bar.update_layout(
             barmode="group", title="Budget vs Incremental by Channel",
             height=320, margin=dict(t=50, b=30),
@@ -937,9 +941,9 @@ def render_search_term_tab(st_insights: dict, wasted: dict, match_df):
         if "search_term" in top_df.columns and "ad_sales" in top_df.columns:
             fig = go.Figure()
             t10 = top_df.head(10)
-            fig.add_trace(go.Bar(x=t10["search_term"], y=t10["ad_sales"], name="Ad Sales", marker_color="#1a0a14"))
+            fig.add_trace(go.Bar(x=t10["search_term"], y=t10["ad_sales"], name="Ad Sales", marker_color="#4f46e5"))
             if "spend" in t10.columns:
-                fig.add_trace(go.Bar(x=t10["search_term"], y=t10["spend"], name="Spend", marker_color="#cc2200"))
+                fig.add_trace(go.Bar(x=t10["search_term"], y=t10["spend"], name="Spend", marker_color="#f97316"))
             fig.update_layout(barmode="group", title="Top 10 Search Terms: Sales vs Spend",
                               xaxis_tickangle=-35, height=380, margin=dict(t=50, b=100),
                               legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
@@ -999,7 +1003,7 @@ def render_search_term_tab(st_insights: dict, wasted: dict, match_df):
         with c2:
             if "acos_%" in match_df.columns and "match_type" in match_df.columns:
                 fig_mt = go.Figure()
-                fig_mt.add_trace(go.Bar(x=match_df["match_type"], y=match_df["acos_%"], marker_color="#cc2200", name="ACOS %"))
+                fig_mt.add_trace(go.Bar(x=match_df["match_type"], y=match_df["acos_%"], marker_color="#f97316", name="ACOS %"))
                 fig_mt.update_layout(title="ACOS by Match Type", height=300, margin=dict(t=50, b=30))
                 st.plotly_chart(fig_mt, use_container_width=True)
 
@@ -1045,7 +1049,7 @@ def render_product_tab(prod_intel: dict, ad_prod_df, bid_df):
         if "asin" in top_roas.columns and "roas" in top_roas.columns:
             fig_roas = go.Figure(go.Bar(
                 x=top_roas["asin"], y=top_roas["roas"],
-                marker_color="#1a0a14", text=top_roas["roas"].round(1), textposition="outside",
+                marker_color="#4f46e5", text=top_roas["roas"].round(1), textposition="outside",
             ))
             fig_roas.update_layout(title="Top ASINs by ROAS", height=320, margin=dict(t=50, b=40))
             st.plotly_chart(fig_roas, use_container_width=True)
@@ -1077,7 +1081,7 @@ def render_product_tab(prod_intel: dict, ad_prod_df, bid_df):
             if "category" in cat_df.columns and "ad_sales" in cat_df.columns:
                 fig_cat = go.Figure(go.Bar(
                     x=cat_df["category"], y=cat_df["ad_sales"],
-                    marker_color="#cc2200", name="Ad Sales",
+                    marker_color="#f97316", name="Ad Sales",
                 ))
                 fig_cat.update_layout(title="Ad Sales by Category", height=300,
                                       xaxis_tickangle=-30, margin=dict(t=50, b=80))
@@ -1131,11 +1135,11 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
         if "spend" in trend_df.columns:
             fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["spend"],
                                       mode="lines+markers", name="Ad Spend",
-                                      line=dict(color="#cc2200", width=2), marker=dict(size=7)))
+                                      line=dict(color="#f97316", width=2), marker=dict(size=7)))
         if "ad_sales" in trend_df.columns:
             fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["ad_sales"],
                                       mode="lines+markers", name="Ad Sales",
-                                      line=dict(color="#1a0a14", width=2), marker=dict(size=7)))
+                                      line=dict(color="#4f46e5", width=2), marker=dict(size=7)))
         fig.update_layout(title="Monthly Spend vs Ad Sales", height=380,
                           xaxis_title="Month", yaxis_title="Amount ($)",
                           legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -1149,7 +1153,7 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
             fig_acos = go.Figure(go.Scatter(
                 x=trend_df["_period_dt"], y=trend_df["acos_%"],
                 mode="lines+markers", fill="tozeroy",
-                line=dict(color="#cc2200", width=2), marker=dict(size=6),
+                line=dict(color="#f97316", width=2), marker=dict(size=6),
                 fillcolor="rgba(204,34,0,0.08)",
             ))
             fig_acos.add_hline(y=25, line_dash="dash", line_color="gray", annotation_text="25% benchmark")
@@ -1162,7 +1166,7 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
             fig_roas = go.Figure(go.Scatter(
                 x=trend_df["_period_dt"], y=trend_df["roas"],
                 mode="lines+markers", fill="tozeroy",
-                line=dict(color="#1a0a14", width=2), marker=dict(size=6),
+                line=dict(color="#4f46e5", width=2), marker=dict(size=6),
                 fillcolor="rgba(26,10,20,0.08)",
             ))
             fig_roas.add_hline(y=4, line_dash="dash", line_color="green", annotation_text="4x target")
@@ -1177,7 +1181,7 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
         if "cpc" in trend_df.columns:
             fig_cpc = go.Figure(go.Bar(
                 x=trend_df["_period_dt"], y=trend_df["cpc"],
-                marker_color="#cc2200", name="CPC",
+                marker_color="#f97316", name="CPC",
             ))
             fig_cpc.update_layout(title="CPC Trend ($)", height=300, margin=dict(t=50, b=40))
             st.plotly_chart(fig_cpc, use_container_width=True)
@@ -1185,7 +1189,7 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
         if "impressions" in trend_df.columns:
             fig_imp = go.Figure(go.Bar(
                 x=trend_df["_period_dt"], y=trend_df["impressions"],
-                marker_color="#1a0a14", name="Impressions",
+                marker_color="#4f46e5", name="Impressions",
             ))
             fig_imp.update_layout(title="Monthly Impressions", height=300, margin=dict(t=50, b=40))
             st.plotly_chart(fig_imp, use_container_width=True)
@@ -1220,23 +1224,14 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
 # ---------------------------------------------------------------------------
 
 def main():
-    # ---- Acosta Header Banner ------------------------------------------------
+    # ---- Header ------------------------------------------------
     st.markdown("""
-    <div class="acosta-header">
-        <div style="display:flex; align-items:center; gap:20px;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="180" height="57">
-              <rect width="220" height="70" rx="4" fill="#1a0a14"/>
-              <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
-              <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
-              <rect x="155" y="17" width="9" height="9" fill="#8b1a1a"/>
-              <rect x="164" y="17" width="9" height="9" fill="#cc2200"/>
-              <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
-                    font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
-            </svg>
-            <div style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
-                Amazon Media Plan Forecast Tool
-            </div>
+    <div class="tool-header">
+        <div>
+            <div class="tool-header-title">📊 Amazon Media Plan Forecast Tool</div>
+            <div class="tool-header-sub">Upload your reports · Analyse performance · Plan for growth</div>
         </div>
+        <div class="tool-header-badge">Media Intelligence</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1286,7 +1281,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         st.markdown("""
-        <div class="acosta-footer">
+        <div class="tool-footer">
             Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
             Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
         </div>
@@ -1412,9 +1407,9 @@ def main():
         - **ASIN Analysis** — blended ads + vendor view per ASIN
         """)
 
-    # ---- Acosta Footer --------------------------------------------------------
+    # ---- Footer ---------------------------------------------------------------
     st.markdown("""
-    <div class="acosta-footer">
+    <div class="tool-footer">
         Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
         Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
     </div>
