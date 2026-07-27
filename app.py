@@ -40,23 +40,6 @@ ACOSTA_RED   = "#cc2200"
 ACOSTA_GREY  = "#f4f4f4"
 ACOSTA_MUTED = "#6b7280"
 
-# SVG logo — matches the official Acosta logo exactly:
-# dark purple/maroon background, white lowercase "acosta" wordmark,
-# red pixel-square icon top-right of the 'a'
-ACOSTA_LOGO_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="148" height="47">
-  <rect width="220" height="70" rx="4" fill="#1a0a14"/>
-  <!-- Red pixel square icon (top-right corner of the 'a') -->
-  <rect x="155" y="8"  width="9"  height="9"  fill="#cc2200"/>
-  <rect x="164" y="8"  width="9"  height="9"  fill="#8b1a1a"/>
-  <rect x="155" y="17" width="9"  height="9"  fill="#8b1a1a"/>
-  <rect x="164" y="17" width="9"  height="9"  fill="#cc2200"/>
-  <!-- "acosta" white wordmark -->
-  <text x="14" y="50" font-family="Arial Black, Arial, sans-serif"
-        font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
-</svg>
-"""
-
 st.markdown("""
 <style>
     /* ---- Acosta brand palette ---- */
@@ -203,11 +186,19 @@ def colour_acos(val):
 # ---------------------------------------------------------------------------
 
 def sidebar():
-    st.sidebar.markdown(f"""
+    st.sidebar.markdown("""
     <div style="text-align:center; padding:16px 0 10px;">
-        <div style="display:inline-block;">{ACOSTA_LOGO_SVG}</div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="148" height="47">
+          <rect width="220" height="70" rx="4" fill="#1a0a14"/>
+          <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
+          <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
+          <rect x="155" y="17" width="9" height="9" fill="#8b1a1a"/>
+          <rect x="164" y="17" width="9" height="9" fill="#cc2200"/>
+          <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
+                font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
+        </svg>
         <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:8px;">
-            Sumeet Mangotra &nbsp;·&nbsp; Brand Ecommerce Manager
+            Sumeet Mangotra &#183; Brand Ecommerce Manager
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -674,16 +665,24 @@ def render_recommendations(ads_metrics, vendor_metrics, scenarios):
 
 def main():
     # ---- Acosta Header Banner ------------------------------------------------
-    st.markdown(f"""
+    st.markdown("""
     <div class="acosta-header">
         <div style="display:flex; align-items:center; gap:20px;">
-            {ACOSTA_LOGO_SVG}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="140" height="45">
+              <rect width="220" height="70" rx="4" fill="#1a0a14"/>
+              <rect x="155" y="8"  width="9" height="9" fill="#cc2200"/>
+              <rect x="164" y="8"  width="9" height="9" fill="#8b1a1a"/>
+              <rect x="155" y="17" width="9" height="9" fill="#8b1a1a"/>
+              <rect x="164" y="17" width="9" height="9" fill="#cc2200"/>
+              <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
+                    font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
+            </svg>
             <div>
-                <div style="font-size:15px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
+                <div style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
                     Amazon Media Plan Forecast Tool
                 </div>
                 <div class="acosta-header-sub">
-                    Omnichannel Retail Growth Catalyst &nbsp;·&nbsp; Brand Ecommerce Intelligence
+                    Omnichannel Retail Growth Catalyst &#183; Brand Ecommerce Intelligence
                 </div>
             </div>
         </div>
