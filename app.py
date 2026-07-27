@@ -523,14 +523,27 @@ def sidebar():
 
     st.sidebar.markdown("### 🎯 Channel Budget Split")
     sp_pct = st.sidebar.slider("Sponsored Products %", 0, 100, 65)
-    sb_pct = st.sidebar.slider("Sponsored Brands %", 0, 100 - sp_pct, 25)
-    sd_pct = 100 - sp_pct - sb_pct
-    st.sidebar.markdown(f"Sponsored Display: **{sd_pct}%** (auto-calculated)")
+    sb_pct = st.sidebar.slider("Sponsored Brands %",   0, 100, 25)
+    sd_pct = st.sidebar.slider("Sponsored Display %",  0, 100, 10)
+
+    # Normalise so the three always sum to 100%
+    _total = sp_pct + sb_pct + sd_pct
+    if _total == 0:
+        sp_w, sb_w, sd_w = 0.65, 0.25, 0.10
+    else:
+        sp_w = sp_pct / _total
+        sb_w = sb_pct / _total
+        sd_w = sd_pct / _total
+
+    st.sidebar.caption(
+        f"Effective split → SP: **{sp_w*100:.1f}%** · SB: **{sb_w*100:.1f}%** · SD: **{sd_w*100:.1f}%**"
+        + ("" if _total == 100 else f"  *(normalised from {_total}%)*")
+    )
 
     channel_split = {
-        "Sponsored Products": sp_pct / 100,
-        "Sponsored Brands": sb_pct / 100,
-        "Sponsored Display": sd_pct / 100,
+        "Sponsored Products": sp_w,
+        "Sponsored Brands":   sb_w,
+        "Sponsored Display":  sd_w,
     }
 
     # ---- Custom Target Overrides -----------------------------------------
