@@ -20,6 +20,15 @@ from metrics import (
 )
 from forecast import run_multi_scenario, scenarios_to_dataframe, run_forecast
 from exporter import build_excel_media_plan
+from insights import (
+    search_term_analysis,
+    wasted_spend_summary,
+    match_type_analysis,
+    product_intelligence,
+    bid_strategy_analysis,
+    ad_product_analysis,
+)
+from trends import build_trend_df, trend_summary, ad_product_trend
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -293,15 +302,20 @@ def render_metrics_dashboard(ads_metrics, vendor_metrics):
     st.markdown('<div class="section-header">📊 Amazon Advertising Metrics</div>', unsafe_allow_html=True)
 
     cols = st.columns(4)
+    roas_val = ads_metrics.get("overall_roas")
     kpis_ads = [
         ("Total Ad Spend", fmt_currency(ads_metrics.get("total_spend")), None),
         ("Ad-Attributed Sales", fmt_currency(ads_metrics.get("total_ad_sales")), None),
         ("Overall ACOS", fmt_pct(ads_metrics.get("overall_acos")), "Lower is better"),
-        ("Overall ROAS", f"{ads_metrics.get('overall_roas') or 'N/A':.2f}x" if ads_metrics.get("overall_roas") else "N/A", "Higher is better"),
+        ("Overall ROAS", f"{roas_val:.2f}x" if roas_val else "N/A", "Higher is better"),
         ("Total Impressions", fmt_num(ads_metrics.get("total_impressions")), None),
         ("Total Clicks", fmt_num(ads_metrics.get("total_clicks")), None),
         ("CTR", fmt_pct(ads_metrics.get("overall_ctr")), None),
         ("CPC", fmt_currency(ads_metrics.get("overall_cpc")), None),
+        ("Total Ad Orders", fmt_num(ads_metrics.get("total_ad_orders")), None),
+        ("Conversion Rate", fmt_pct(ads_metrics.get("conversion_rate")), "Click → Purchase"),
+        ("New to Brand %", fmt_pct(ads_metrics.get("ntb_order_pct")), "First-time buyers"),
+        ("Cost per Order", fmt_currency(ads_metrics.get("cost_per_order")), None),
     ]
     for i, (label, val, delta) in enumerate(kpis_ads):
         with cols[i % 4]:
@@ -688,6 +702,319 @@ def render_recommendations(ads_metrics, vendor_metrics, scenarios):
 
 
 # ---------------------------------------------------------------------------
+# Tab — Search Term Intelligence
+# ---------------------------------------------------------------------------
+
+def render_search_term_tab(st_insights: dict, wasted: dict, match_df):
+    if not st_insights:
+        st.info("No search term data found in your report. This tab requires a report with a 'Search term' column.")
+        return
+
+    # Wasted spend banner
+    if wasted:
+        w_amt = wasted.get("wasted_spend", 0)
+        w_pct = wasted.get("wasted_pct", 0)
+        col_w1, col_w2, col_w3 = st.columns(3)
+        with col_w1:
+            st.markdown(metric_card("💸 Wasted Spend", fmt_currency(w_amt), f"{w_pct}% of total budget — zero purchases"), unsafe_allow_html=True)
+        with col_w2:
+            st.markdown(metric_card("✅ Productive Spend", fmt_currency(wasted.get("total_spend", 0) - w_amt), "Generated at least 1 purchase"), unsafe_allow_html=True)
+        with col_w3:
+            recoverable = w_amt * 0.6
+            st.markdown(metric_card("💡 Recoverable Budget", fmt_currency(recoverable), "Est. reclaimable for better keywords"), unsafe_allow_html=True)
+
+    # Top converting search terms
+    st.markdown('<div class="section-header">🏆 Top Converting Search Terms</div>', unsafe_allow_html=True)
+    top_df = st_insights.get("top_converting", pd.DataFrame())
+    if not top_df.empty:
+        cols = [c for c in ["search_term", "ad_sales", "spend", "acos_%", "roas", "cvr_%", "ad_orders", "clicks"] if c in top_df.columns]
+        disp = top_df[cols].head(20).copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=360)
+
+        # Bar chart — top 10 by sales
+        if "search_term" in top_df.columns and "ad_sales" in top_df.columns:
+            fig = go.Figure()
+            t10 = top_df.head(10)
+            fig.add_trace(go.Bar(x=t10["search_term"], y=t10["ad_sales"], name="Ad Sales", marker_color="#1a0a14"))
+            if "spend" in t10.columns:
+                fig.add_trace(go.Bar(x=t10["search_term"], y=t10["spend"], name="Spend", marker_color="#cc2200"))
+            fig.update_layout(barmode="group", title="Top 10 Search Terms: Sales vs Spend",
+                              xaxis_tickangle=-35, height=380, margin=dict(t=50, b=100),
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Wasted spend table
+    st.markdown('<div class="section-header">⚠️ Wasted Spend — Clicks with Zero Purchases</div>', unsafe_allow_html=True)
+    waste_df = st_insights.get("wasted_spend", pd.DataFrame())
+    if not waste_df.empty:
+        cols = [c for c in ["search_term", "spend", "clicks", "impressions"] if c in waste_df.columns]
+        disp = waste_df[cols].head(20).copy()
+        disp.columns = [c.replace("_", " ").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=300)
+        st.markdown(f"""
+        <div class="warning-card">
+            <strong>Action:</strong> Add these search terms as <strong>negative keywords</strong> in your campaigns
+            to stop wasting budget. Total recoverable spend: <strong>{fmt_currency(wasted.get("wasted_spend", 0))}</strong>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.success("No pure wasted spend detected — all search terms with clicks have at least one purchase.")
+
+    # NTB Leaders
+    ntb_df = st_insights.get("ntb_leaders", pd.DataFrame())
+    if not ntb_df.empty:
+        st.markdown('<div class="section-header">🆕 New to Brand Leaders</div>', unsafe_allow_html=True)
+        cols = [c for c in ["search_term", "ntb_%", "ad_orders_ntb", "ad_orders", "spend", "ad_sales"] if c in ntb_df.columns]
+        disp = ntb_df[cols].head(15).copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=280)
+        st.markdown("""<div class="reco-card">
+            <strong>Insight:</strong> These search terms drive a high % of first-time buyers.
+            Increase bids on these terms to grow your customer base and long-term brand value.
+        </div>""", unsafe_allow_html=True)
+
+    # Harvest candidates
+    harvest_df = st_insights.get("harvest_candidates", pd.DataFrame())
+    if not harvest_df.empty:
+        st.markdown('<div class="section-header">🌱 Keyword Harvest Candidates</div>', unsafe_allow_html=True)
+        cols = [c for c in ["search_term", "cvr_%", "ad_orders", "spend", "acos_%"] if c in harvest_df.columns]
+        disp = harvest_df[cols].head(15).copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=280)
+        st.markdown("""<div class="reco-card">
+            <strong>Action:</strong> Add these high-converting search terms as <strong>Exact Match</strong>
+            keywords in your manual campaigns to capture volume efficiently.
+        </div>""", unsafe_allow_html=True)
+
+    # Match type efficiency
+    if not match_df.empty:
+        st.markdown('<div class="section-header">🎯 Match Type Efficiency</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            cols = [c for c in ["match_type", "spend", "ad_sales", "acos_%", "roas", "cvr_%", "cpc"] if c in match_df.columns]
+            disp = match_df[cols].copy()
+            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+            st.dataframe(disp, use_container_width=True)
+        with c2:
+            if "acos_%" in match_df.columns and "match_type" in match_df.columns:
+                fig_mt = go.Figure()
+                fig_mt.add_trace(go.Bar(x=match_df["match_type"], y=match_df["acos_%"], marker_color="#cc2200", name="ACOS %"))
+                fig_mt.update_layout(title="ACOS by Match Type", height=300, margin=dict(t=50, b=30))
+                st.plotly_chart(fig_mt, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Tab — Product Intelligence
+# ---------------------------------------------------------------------------
+
+def render_product_tab(prod_intel: dict, ad_prod_df, bid_df):
+    if not prod_intel:
+        st.info("No ASIN-level data found. This tab requires 'Advertised product ID' in your report.")
+        return
+
+    # Ad product type breakdown
+    if not ad_prod_df.empty:
+        st.markdown('<div class="section-header">📢 Ad Product Type Breakdown (SP / SB / SD)</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            cols = [c for c in ["ad_product", "spend", "ad_sales", "acos_%", "roas", "spend_share_%"] if c in ad_prod_df.columns]
+            disp = ad_prod_df[cols].copy()
+            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+            st.dataframe(disp, use_container_width=True)
+        with c2:
+            if "spend" in ad_prod_df.columns and "ad_product" in ad_prod_df.columns:
+                fig_pie = go.Figure(go.Pie(
+                    labels=ad_prod_df["ad_product"],
+                    values=ad_prod_df["spend"],
+                    hole=0.45,
+                    marker_colors=["#1a0a14", "#cc2200", "#798da0", "#f4f4f4"],
+                ))
+                fig_pie.update_layout(title="Spend Share by Ad Product", height=300, margin=dict(t=50, b=10))
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+    # Top ROAS ASINs
+    top_roas = prod_intel.get("top_roas", pd.DataFrame())
+    if not top_roas.empty:
+        st.markdown('<div class="section-header">🚀 Top 10 ASINs by ROAS — Scale These</div>', unsafe_allow_html=True)
+        cols = [c for c in ["asin", "product_title", "roas", "ad_sales", "spend", "acos_%", "cvr_%", "ntb_%"] if c in top_roas.columns]
+        disp = top_roas[cols].copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=300)
+
+        if "asin" in top_roas.columns and "roas" in top_roas.columns:
+            fig_roas = go.Figure(go.Bar(
+                x=top_roas["asin"], y=top_roas["roas"],
+                marker_color="#1a0a14", text=top_roas["roas"].round(1), textposition="outside",
+            ))
+            fig_roas.update_layout(title="Top ASINs by ROAS", height=320, margin=dict(t=50, b=40))
+            st.plotly_chart(fig_roas, use_container_width=True)
+
+    # Worst ACOS ASINs
+    worst_acos = prod_intel.get("worst_acos", pd.DataFrame())
+    if not worst_acos.empty:
+        st.markdown('<div class="section-header">🔴 Top 10 ASINs by ACOS — Review or Pause</div>', unsafe_allow_html=True)
+        cols = [c for c in ["asin", "product_title", "acos_%", "spend", "ad_sales", "roas", "ad_orders"] if c in worst_acos.columns]
+        disp = worst_acos[cols].copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True, height=300)
+        st.markdown("""<div class="warning-card">
+            <strong>Action:</strong> Review these ASINs — check listing quality, pricing vs competitors,
+            and review quality. Consider pausing or reducing bids until the issues are resolved.
+        </div>""", unsafe_allow_html=True)
+
+    # Category rollup
+    cat_df = prod_intel.get("by_category", pd.DataFrame())
+    if not cat_df.empty:
+        st.markdown('<div class="section-header">🗂️ Category Performance Rollup</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            cols = [c for c in ["category", "spend", "ad_sales", "acos_%", "roas", "ad_orders"] if c in cat_df.columns]
+            disp = cat_df[cols].copy()
+            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+            st.dataframe(disp, use_container_width=True)
+        with c2:
+            if "category" in cat_df.columns and "ad_sales" in cat_df.columns:
+                fig_cat = go.Figure(go.Bar(
+                    x=cat_df["category"], y=cat_df["ad_sales"],
+                    marker_color="#cc2200", name="Ad Sales",
+                ))
+                fig_cat.update_layout(title="Ad Sales by Category", height=300,
+                                      xaxis_tickangle=-30, margin=dict(t=50, b=80))
+                st.plotly_chart(fig_cat, use_container_width=True)
+
+    # Bid strategy
+    if not bid_df.empty:
+        st.markdown('<div class="section-header">⚙️ Bid Strategy Performance</div>', unsafe_allow_html=True)
+        cols = [c for c in ["bid_strategy", "spend", "ad_sales", "acos_%", "roas", "impressions"] if c in bid_df.columns]
+        disp = bid_df[cols].copy()
+        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Tab — Trend Analysis
+# ---------------------------------------------------------------------------
+
+def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
+    if trend_df.empty:
+        st.info("No date/time data found. Trend analysis requires a 'Date range' column in your report.")
+        return
+
+    # MoM summary banners
+    if t_summary:
+        st.markdown('<div class="section-header">📊 Period-over-Period Changes</div>', unsafe_allow_html=True)
+        cols = st.columns(4)
+        def delta_str(val):
+            if val is None:
+                return None
+            arrow = "▲" if val > 0 else "▼"
+            return f"{arrow} {abs(val):.1f}% vs prior period"
+
+        with cols[0]:
+            st.markdown(metric_card("Spend Change", delta_str(t_summary.get("spend_change_pct")) or "N/A",
+                                     t_summary.get("latest_period")), unsafe_allow_html=True)
+        with cols[1]:
+            st.markdown(metric_card("Sales Change", delta_str(t_summary.get("sales_change_pct")) or "N/A",
+                                     t_summary.get("latest_period")), unsafe_allow_html=True)
+        with cols[2]:
+            st.markdown(metric_card("ACOS Change", delta_str(t_summary.get("acos_change_pct")) or "N/A",
+                                     "Lower is better"), unsafe_allow_html=True)
+        with cols[3]:
+            st.markdown(metric_card("ROAS Change", delta_str(t_summary.get("roas_change_pct")) or "N/A",
+                                     "Higher is better"), unsafe_allow_html=True)
+
+    # Spend vs Sales trend
+    st.markdown('<div class="section-header">📈 Monthly Spend vs Sales Trend</div>', unsafe_allow_html=True)
+    if "_period_dt" in trend_df.columns:
+        fig = go.Figure()
+        if "spend" in trend_df.columns:
+            fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["spend"],
+                                      mode="lines+markers", name="Ad Spend",
+                                      line=dict(color="#cc2200", width=2), marker=dict(size=7)))
+        if "ad_sales" in trend_df.columns:
+            fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["ad_sales"],
+                                      mode="lines+markers", name="Ad Sales",
+                                      line=dict(color="#1a0a14", width=2), marker=dict(size=7)))
+        fig.update_layout(title="Monthly Spend vs Ad Sales", height=380,
+                          xaxis_title="Month", yaxis_title="Amount ($)",
+                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                          margin=dict(t=60, b=40))
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ACOS trend
+    c1, c2 = st.columns(2)
+    with c1:
+        if "acos_%" in trend_df.columns:
+            fig_acos = go.Figure(go.Scatter(
+                x=trend_df["_period_dt"], y=trend_df["acos_%"],
+                mode="lines+markers", fill="tozeroy",
+                line=dict(color="#cc2200", width=2), marker=dict(size=6),
+                fillcolor="rgba(204,34,0,0.08)",
+            ))
+            fig_acos.add_hline(y=25, line_dash="dash", line_color="gray", annotation_text="25% benchmark")
+            fig_acos.update_layout(title="ACOS Trend (%)", height=320,
+                                    xaxis_title="Month", yaxis_title="ACOS (%)",
+                                    margin=dict(t=50, b=40))
+            st.plotly_chart(fig_acos, use_container_width=True)
+    with c2:
+        if "roas" in trend_df.columns:
+            fig_roas = go.Figure(go.Scatter(
+                x=trend_df["_period_dt"], y=trend_df["roas"],
+                mode="lines+markers", fill="tozeroy",
+                line=dict(color="#1a0a14", width=2), marker=dict(size=6),
+                fillcolor="rgba(26,10,20,0.08)",
+            ))
+            fig_roas.add_hline(y=4, line_dash="dash", line_color="green", annotation_text="4x target")
+            fig_roas.update_layout(title="ROAS Trend", height=320,
+                                    xaxis_title="Month", yaxis_title="ROAS",
+                                    margin=dict(t=50, b=40))
+            st.plotly_chart(fig_roas, use_container_width=True)
+
+    # CPC & CTR trends
+    c3, c4 = st.columns(2)
+    with c3:
+        if "cpc" in trend_df.columns:
+            fig_cpc = go.Figure(go.Bar(
+                x=trend_df["_period_dt"], y=trend_df["cpc"],
+                marker_color="#cc2200", name="CPC",
+            ))
+            fig_cpc.update_layout(title="CPC Trend ($)", height=300, margin=dict(t=50, b=40))
+            st.plotly_chart(fig_cpc, use_container_width=True)
+    with c4:
+        if "impressions" in trend_df.columns:
+            fig_imp = go.Figure(go.Bar(
+                x=trend_df["_period_dt"], y=trend_df["impressions"],
+                marker_color="#1a0a14", name="Impressions",
+            ))
+            fig_imp.update_layout(title="Monthly Impressions", height=300, margin=dict(t=50, b=40))
+            st.plotly_chart(fig_imp, use_container_width=True)
+
+    # Ad product spend trend
+    if not prod_trend_df.empty and "campaign_type" in prod_trend_df.columns:
+        st.markdown('<div class="section-header">📊 Monthly Spend by Ad Product (SP / SB / SD)</div>', unsafe_allow_html=True)
+        fig_pt = go.Figure()
+        colors = ["#1a0a14", "#cc2200", "#798da0"]
+        for i, prod in enumerate(prod_trend_df["campaign_type"].unique()):
+            sub = prod_trend_df[prod_trend_df["campaign_type"] == prod]
+            fig_pt.add_trace(go.Bar(
+                x=sub["_period_dt"], y=sub["spend"],
+                name=str(prod), marker_color=colors[i % len(colors)],
+            ))
+        fig_pt.update_layout(barmode="stack", title="Spend by Ad Product Over Time",
+                              height=360, xaxis_title="Month", yaxis_title="Spend ($)",
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                              margin=dict(t=60, b=40))
+        st.plotly_chart(fig_pt, use_container_width=True)
+
+    # Raw trend table
+    with st.expander("📋 View Raw Monthly Data"):
+        cols = [c for c in ["_period_dt", "spend", "ad_sales", "acos_%", "roas", "impressions", "clicks", "cpc"] if c in trend_df.columns]
+        disp = trend_df[cols].copy()
+        disp.columns = [c.replace("_period_dt", "Month").replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
+        st.dataframe(disp, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # Main App
 # ---------------------------------------------------------------------------
 
@@ -782,15 +1109,27 @@ def main():
         return
 
     # ---- Pre-compute breakdowns -------------------------------------------
-    campaign_df = campaign_breakdown(ads_df) if ads_df is not None else pd.DataFrame()
-    asin_ads_df = asin_ads_breakdown(ads_df) if ads_df is not None else pd.DataFrame()
-    asin_vendor_df = asin_vendor_breakdown(vendor_df) if vendor_df is not None else pd.DataFrame()
-    merged_asin_df = merge_asin_view(asin_ads_df, asin_vendor_df)
+    _ads = ads_df if ads_df is not None else pd.DataFrame()
+    campaign_df       = campaign_breakdown(_ads)
+    asin_ads_df       = asin_ads_breakdown(_ads)
+    asin_vendor_df    = asin_vendor_breakdown(vendor_df) if vendor_df is not None else pd.DataFrame()
+    merged_asin_df    = merge_asin_view(asin_ads_df, asin_vendor_df)
+    st_insights       = search_term_analysis(_ads)
+    wasted            = wasted_spend_summary(_ads)
+    match_df          = match_type_analysis(_ads)
+    prod_intel        = product_intelligence(_ads)
+    bid_df            = bid_strategy_analysis(_ads)
+    ad_prod_df        = ad_product_analysis(_ads)
+    trend_df          = build_trend_df(_ads, freq="M")
+    t_summary         = trend_summary(trend_df)
+    prod_trend_df     = ad_product_trend(_ads, freq="M")
 
     # ---- Tabs ---------------------------------------------------------------
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Key Metrics",
-        "🔍 Campaign & ASIN Analysis",
+        "🔎 Search Term Intelligence",
+        "📦 Product Intelligence",
+        "📅 Trend Analysis",
         "📈 Forecast & Media Plan",
         "💡 Recommendations",
     ])
@@ -799,17 +1138,22 @@ def main():
         render_metrics_dashboard(ads_metrics, vendor_metrics)
 
     with tab2:
-        render_campaign_analysis(ads_df if ads_df is not None else pd.DataFrame(),
-                                  vendor_df)
+        render_search_term_tab(st_insights, wasted, match_df)
+
+    with tab3:
+        render_product_tab(prod_intel, ad_prod_df, bid_df)
+
+    with tab4:
+        render_trend_tab(trend_df, t_summary, prod_trend_df)
 
     scenarios = []
-    with tab3:
+    with tab5:
         if ads_df is not None or vendor_df is not None:
             scenarios = render_forecast(
                 ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split
             )
 
-    with tab4:
+    with tab6:
         render_recommendations(ads_metrics, vendor_metrics, scenarios)
 
     # ---- Download button ---------------------------------------------------

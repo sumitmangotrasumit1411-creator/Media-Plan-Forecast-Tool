@@ -28,8 +28,11 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
     m["total_spend"] = col_sum("spend")
     m["total_ad_sales"] = col_sum("ad_sales")
     m["total_ad_orders"] = col_sum("ad_orders")
+    m["total_ad_orders_ntb"] = col_sum("ad_orders_ntb")
+    m["total_ad_sales_ntb"] = col_sum("sales_ntb")
+    m["total_ad_sales_longterm"] = col_sum("ad_sales_longterm")
 
-    # Derived
+    # Derived — ACOS / ROAS
     if m["total_ad_sales"] > 0:
         m["overall_acos"] = round(m["total_spend"] / m["total_ad_sales"] * 100, 2)
         m["overall_roas"] = round(m["total_ad_sales"] / m["total_spend"], 2) if m["total_spend"] > 0 else None
@@ -37,6 +40,7 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
         m["overall_acos"] = None
         m["overall_roas"] = None
 
+    # CTR / CPC
     if m["total_clicks"] > 0:
         m["overall_ctr"] = round(m["total_clicks"] / m["total_impressions"] * 100, 4) if m["total_impressions"] > 0 else None
         m["overall_cpc"] = round(m["total_spend"] / m["total_clicks"], 4)
@@ -44,10 +48,29 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
         m["overall_ctr"] = None
         m["overall_cpc"] = None
 
-    if m["total_ad_orders"] > 0:
-        m["conversion_rate"] = round(m["total_ad_orders"] / m["total_clicks"] * 100, 2) if m["total_clicks"] > 0 else None
+    # Conversion rate
+    if m["total_ad_orders"] > 0 and m["total_clicks"] > 0:
+        m["conversion_rate"] = round(m["total_ad_orders"] / m["total_clicks"] * 100, 2)
     else:
         m["conversion_rate"] = None
+
+    # New to Brand %
+    if m["total_ad_orders_ntb"] > 0 and m["total_ad_orders"] > 0:
+        m["ntb_order_pct"] = round(m["total_ad_orders_ntb"] / m["total_ad_orders"] * 100, 1)
+    else:
+        m["ntb_order_pct"] = None
+
+    # Long-term ROAS
+    if m["total_ad_sales_longterm"] > 0 and m["total_spend"] > 0:
+        m["longterm_roas"] = round(m["total_ad_sales_longterm"] / m["total_spend"], 2)
+    else:
+        m["longterm_roas"] = None
+
+    # Cost per order
+    if m["total_ad_orders"] > 0 and m["total_spend"] > 0:
+        m["cost_per_order"] = round(m["total_spend"] / m["total_ad_orders"], 2)
+    else:
+        m["cost_per_order"] = None
 
     return m
 
