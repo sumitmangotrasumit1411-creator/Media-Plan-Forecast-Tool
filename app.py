@@ -1516,16 +1516,46 @@ def main():
         """, unsafe_allow_html=True)
         return
 
-    # ---- Parse files -------------------------------------------------------
+    # ---- Parse files (cached so slider changes don't re-parse) -------------
     ads_df = None
     vendor_df = None
     ads_metrics = {}
     vendor_metrics = {}
 
+    @st.cache_data(show_spinner=False)
+    def _load_ads(file):
+        df = parse_amazon_ads_report(file)
+        metrics = extract_ads_metrics(df)
+        return df, metrics
+
+    @st.cache_data(show_spinner=False)
+    def _load_vendor(file):
+        df = parse_vendor_central_report(file)
+        metrics = extract_vendor_metrics(df)
+        return df, metrics
+
+    @st.cache_data(show_spinner=False)
+    def _compute_breakdowns(ads_df, vendor_df):
+        _ads = ads_df if ads_df is not None else pd.DataFrame()
+        _ven = vendor_df if vendor_df is not None else None
+        return {
+            "campaign_df":    campaign_breakdown(_ads),
+            "asin_ads_df":    asin_ads_breakdown(_ads),
+            "asin_vendor_df": asin_vendor_breakdown(_ven) if _ven is not None else pd.DataFrame(),
+            "st_insights":    search_term_analysis(_ads),
+            "wasted":         wasted_spend_summary(_ads),
+            "match_df":       match_type_analysis(_ads),
+            "prod_intel":     product_intelligence(_ads),
+            "bid_df":         bid_strategy_analysis(_ads),
+            "ad_prod_df":     ad_product_analysis(_ads),
+            "trend_df":       build_trend_df(_ads, freq="M"),
+            "prod_trend_df":  ad_product_trend(_ads, freq="M"),
+        }
+
     with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds..."):
         if ads_file:
             try:
-                ads_df = parse_amazon_ads_report(ads_file)
+                ads_df, ads_metrics = _load_ads(ads_file)
                 missing = validate_ads_report(ads_df)
                 if missing:
                     st.warning(f"Amazon Ads report is missing columns: {missing}. Metrics may be partial.")
@@ -1533,20 +1563,18 @@ def main():
                     st.success(f"✅ Amazon Ads report loaded — {len(ads_df):,} rows, {len(ads_df.columns)} columns")
                 if len(ads_df) > 500_000:
                     st.info(f"ℹ️ Large report ({len(ads_df):,} rows) — processing may take a moment.")
-                ads_metrics = extract_ads_metrics(ads_df)
             except Exception as e:
                 st.error(f"Error reading Amazon Ads report: {e}")
                 ads_df = None
 
         if vendor_file:
             try:
-                vendor_df = parse_vendor_central_report(vendor_file)
+                vendor_df, vendor_metrics = _load_vendor(vendor_file)
                 missing_v = validate_vendor_report(vendor_df)
                 if missing_v:
                     st.warning(f"Vendor Central report is missing columns: {missing_v}. Metrics may be partial.")
                 else:
                     st.success(f"✅ Vendor Central report loaded — {len(vendor_df):,} rows, {len(vendor_df.columns)} columns")
-                vendor_metrics = extract_vendor_metrics(vendor_df)
             except Exception as e:
                 st.error(f"Error reading Vendor Central report: {e}")
                 vendor_df = None
@@ -1555,21 +1583,21 @@ def main():
         st.error("Could not load any reports. Please check file formats and try again.")
         return
 
-    # ---- Pre-compute breakdowns -------------------------------------------
-    _ads = ads_df if ads_df is not None else pd.DataFrame()
-    campaign_df       = campaign_breakdown(_ads)
-    asin_ads_df       = asin_ads_breakdown(_ads)
-    asin_vendor_df    = asin_vendor_breakdown(vendor_df) if vendor_df is not None else pd.DataFrame()
-    merged_asin_df    = merge_asin_view(asin_ads_df, asin_vendor_df)
-    st_insights       = search_term_analysis(_ads)
-    wasted            = wasted_spend_summary(_ads)
-    match_df          = match_type_analysis(_ads)
-    prod_intel        = product_intelligence(_ads)
-    bid_df            = bid_strategy_analysis(_ads)
-    ad_prod_df        = ad_product_analysis(_ads)
-    trend_df          = build_trend_df(_ads, freq="M")
-    t_summary         = trend_summary(trend_df)
-    prod_trend_df     = ad_product_trend(_ads, freq="M")
+    # ---- Pre-compute breakdowns (cached) ----------------------------------
+    bd = _compute_breakdowns(ads_df, vendor_df)
+    campaign_df    = bd["campaign_df"]
+    asin_ads_df    = bd["asin_ads_df"]
+    asin_vendor_df = bd["asin_vendor_df"]
+    merged_asin_df = merge_asin_view(asin_ads_df, asin_vendor_df)
+    st_insights    = bd["st_insights"]
+    wasted         = bd["wasted"]
+    match_df       = bd["match_df"]
+    prod_intel     = bd["prod_intel"]
+    bid_df         = bd["bid_df"]
+    ad_prod_df     = bd["ad_prod_df"]
+    trend_df       = bd["trend_df"]
+    t_summary      = trend_summary(trend_df)
+    prod_trend_df  = bd["prod_trend_df"]
 
     # ---- Tabs ---------------------------------------------------------------
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
