@@ -138,6 +138,25 @@ st.markdown("""
         margin: 10px 0 !important;
     }
 
+    /* Number inputs & text inputs — white bg, dark text so value is visible */
+    [data-testid="stSidebar"] input[type="number"],
+    [data-testid="stSidebar"] input[type="text"] {
+        background: #ffffff !important;
+        color: #1e1b4b !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+    [data-testid="stSidebar"] [data-baseweb="input"] input {
+        background: #ffffff !important;
+        color: #1e1b4b !important;
+    }
+    /* Step buttons (+/-) on number inputs */
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+        color: #1e1b4b !important;
+        background: #f3f4f6 !important;
+    }
+
     /* File uploader */
     [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
         background: rgba(255,255,255,0.96) !important;
