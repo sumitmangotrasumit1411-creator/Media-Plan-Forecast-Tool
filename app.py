@@ -60,13 +60,14 @@ st.markdown("""
     /* ── Page background ── */
     .stApp { background: #f0f2ff !important; }
     .block-container {
-        padding-top: 0 !important;
+        padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
+        max-width: 100% !important;
     }
-    /* Pull header flush to top, no gap */
+    /* Header — full width, proper rounded corners all sides */
     .tool-header {
-        margin-top: -10px !important;
-        border-radius: 0 0 14px 14px !important;
+        margin-top: 0 !important;
+        border-radius: 14px !important;
     }
 
     /* ════════════════════════════════════
