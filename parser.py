@@ -146,22 +146,39 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Chunk size for large CSV reads — 100k rows at a time
+_CSV_CHUNKSIZE = 100_000
+
+
 def _read_file(uploaded_file) -> pd.DataFrame:
-    """Read an uploaded Streamlit file object (CSV or XLSX) into a DataFrame."""
+    """
+    Read an uploaded Streamlit file object (CSV or XLSX) into a DataFrame.
+    Large CSVs are read in chunks to avoid memory spikes.
+    """
     name = uploaded_file.name.lower()
     raw = uploaded_file.read()
+
     if name.endswith(".csv"):
-        # Try common encodings
         for enc in ("utf-8", "latin-1", "cp1252"):
             try:
-                df = pd.read_csv(io.BytesIO(raw), encoding=enc, thousands=",")
+                buf = io.BytesIO(raw)
+                chunks = pd.read_csv(
+                    buf,
+                    encoding=enc,
+                    thousands=",",
+                    chunksize=_CSV_CHUNKSIZE,
+                    low_memory=False,
+                )
+                df = pd.concat(chunks, ignore_index=True)
                 return df
             except Exception:
                 continue
         raise ValueError("Could not decode CSV file.")
+
     elif name.endswith((".xlsx", ".xls")):
         df = pd.read_excel(io.BytesIO(raw), engine="openpyxl")
         return df
+
     else:
         raise ValueError(f"Unsupported file format: {uploaded_file.name}")
 

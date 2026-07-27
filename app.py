@@ -25,46 +25,114 @@ from exporter import build_excel_media_plan
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Media Plan Forecast Tool",
+    page_title="Acosta | Amazon Media Plan Forecast",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------------------------
-# Custom CSS
+# Acosta Brand Colors
+# NAVY  #293C5B  |  RED  #e71d36  |  LIGHT GREY  #f4f4f4  |  WHITE #ffffff
 # ---------------------------------------------------------------------------
+ACOSTA_NAVY  = "#293C5B"
+ACOSTA_RED   = "#e71d36"
+ACOSTA_GREY  = "#f4f4f4"
+ACOSTA_MUTED = "#798da0"
+
 st.markdown("""
 <style>
-    .metric-card {
-        background: #f7f8fa;
-        border: 1px solid #e5e7eb;
+    /* ---- Acosta brand palette ---- */
+    :root {
+        --acosta-navy: #293C5B;
+        --acosta-red:  #e71d36;
+        --acosta-grey: #f4f4f4;
+        --acosta-muted: #798da0;
+    }
+
+    /* Sidebar background */
+    [data-testid="stSidebar"] { background-color: #293C5B !important; }
+    [data-testid="stSidebar"] * { color: #ffffff !important; }
+    [data-testid="stSidebar"] .stMarkdown h1,
+    [data-testid="stSidebar"] .stMarkdown h2,
+    [data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; }
+    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.2) !important; }
+
+    /* Header banner */
+    .acosta-header {
+        background: #293C5B;
+        padding: 18px 28px;
         border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .acosta-header-title {
+        font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;
+    }
+    .acosta-header-title span { color: #e71d36; }
+    .acosta-header-sub {
+        font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 4px;
+    }
+    .acosta-badge {
+        background: #e71d36; color: #ffffff;
+        font-size: 11px; font-weight: 700;
+        padding: 4px 12px; border-radius: 20px;
+        white-space: nowrap;
+    }
+
+    /* Metric cards */
+    .metric-card {
+        background: #f4f4f4;
+        border: 1px solid #D0D5D2;
+        border-top: 3px solid #293C5B;
+        border-radius: 6px;
         padding: 16px 20px;
         margin: 4px 0;
     }
-    .metric-label { font-size: 12px; color: #57606a; font-weight: 500; }
-    .metric-value { font-size: 22px; font-weight: 700; color: #1f2328; }
-    .metric-delta { font-size: 12px; color: #3b82d4; }
+    .metric-label { font-size: 12px; color: #798da0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value { font-size: 22px; font-weight: 800; color: #293C5B; }
+    .metric-delta { font-size: 12px; color: #e71d36; font-weight: 500; }
+
+    /* Section headers */
     .section-header {
-        font-size: 18px; font-weight: 700; color: #1f2328;
-        border-bottom: 2px solid #3b82d4; padding-bottom: 6px;
-        margin: 24px 0 16px 0;
+        font-size: 17px; font-weight: 700; color: #293C5B;
+        border-bottom: 3px solid #e71d36; padding-bottom: 6px;
+        margin: 28px 0 16px 0;
     }
+
+    /* Recommendation cards */
     .reco-card {
-        background: #eef6ff;
-        border-left: 4px solid #3b82d4;
+        background: #eef2f8;
+        border-left: 4px solid #293C5B;
         padding: 12px 16px;
         border-radius: 4px;
         margin: 8px 0;
     }
     .warning-card {
-        background: #fff8e6;
-        border-left: 4px solid #f59e0b;
+        background: #fff0f0;
+        border-left: 4px solid #e71d36;
         padding: 12px 16px;
         border-radius: 4px;
+        margin: 8px 0;
     }
+
+    /* Tabs */
     .stTabs [data-baseweb="tab"] { font-size: 14px; font-weight: 600; }
+    .stTabs [aria-selected="true"] { color: #e71d36 !important; border-bottom-color: #e71d36 !important; }
+
+    /* Footer */
+    .acosta-footer {
+        margin-top: 40px;
+        padding: 16px 0 8px;
+        border-top: 2px solid #293C5B;
+        text-align: center;
+        font-size: 12px;
+        color: #798da0;
+    }
+    .acosta-footer strong { color: #293C5B; }
+    .acosta-footer a { color: #e71d36; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,7 +184,15 @@ def colour_acos(val):
 # ---------------------------------------------------------------------------
 
 def sidebar():
-    st.sidebar.title("📂 Upload Reports")
+    st.sidebar.markdown("""
+    <div style="text-align:center; padding: 10px 0 6px;">
+        <div style="font-size:20px; font-weight:900; color:#ffffff; letter-spacing:1px;">ACOSTA</div>
+        <div style="font-size:10px; color:rgba(255,255,255,0.6); margin-top:2px;">Brand Ecommerce Manager</div>
+        <div style="font-size:10px; color:rgba(255,255,255,0.5);">Sumeet Mangotra</div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📂 Upload Reports")
     st.sidebar.markdown("---")
 
     ads_file = st.sidebar.file_uploader(
@@ -222,7 +298,7 @@ def render_metrics_dashboard(ads_metrics, vendor_metrics):
                     delta={"reference": 25, "decreasing": {"color": "green"}, "increasing": {"color": "red"}},
                     gauge={
                         "axis": {"range": [0, 80]},
-                        "bar": {"color": "#3b82d4"},
+                        "bar": {"color": "#293C5B"},
                         "steps": [
                             {"range": [0, 20], "color": "#d1fae5"},
                             {"range": [20, 35], "color": "#fef3c7"},
@@ -243,7 +319,7 @@ def render_metrics_dashboard(ads_metrics, vendor_metrics):
                     delta={"reference": 4, "increasing": {"color": "green"}, "decreasing": {"color": "red"}},
                     gauge={
                         "axis": {"range": [0, 10]},
-                        "bar": {"color": "#7c5cd8"},
+                        "bar": {"color": "#e71d36"},
                         "steps": [
                             {"range": [0, 2], "color": "#fee2e2"},
                             {"range": [2, 4], "color": "#fef3c7"},
@@ -277,9 +353,9 @@ def render_campaign_analysis(ads_df, vendor_df):
         if chart_cols:
             fig = go.Figure()
             if "spend" in top10.columns:
-                fig.add_trace(go.Bar(x=top10[name_col], y=top10["spend"], name="Ad Spend", marker_color="#3b82d4"))
+                fig.add_trace(go.Bar(x=top10[name_col], y=top10["spend"], name="Ad Spend", marker_color="#293C5B"))
             if "ad_sales" in top10.columns:
-                fig.add_trace(go.Bar(x=top10[name_col], y=top10["ad_sales"], name="Ad Sales", marker_color="#7c5cd8"))
+                fig.add_trace(go.Bar(x=top10[name_col], y=top10["ad_sales"], name="Ad Sales", marker_color="#e71d36"))
             fig.update_layout(
                 barmode="group", title="Top 10 Campaigns: Spend vs Sales",
                 xaxis_tickangle=-35, height=380,
@@ -364,8 +440,8 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
 
     fig = go.Figure()
     labels = [f"+{s['growth_pct']}%" for s in scenarios]
-    fig.add_trace(go.Bar(x=labels, y=[s["target_revenue"] for s in scenarios], name="Target Revenue", marker_color="#3b82d4"))
-    fig.add_trace(go.Bar(x=labels, y=[s["recommended_spend"] for s in scenarios], name="Rec. Ad Spend", marker_color="#7c5cd8"))
+    fig.add_trace(go.Bar(x=labels, y=[s["target_revenue"] for s in scenarios], name="Target Revenue", marker_color="#293C5B"))
+    fig.add_trace(go.Bar(x=labels, y=[s["recommended_spend"] for s in scenarios], name="Rec. Ad Spend", marker_color="#e71d36"))
     fig.add_hline(y=baseline_revenue, line_dash="dot", line_color="gray", annotation_text=f"Current Revenue: {fmt_currency(baseline_revenue)}")
     fig.add_hline(y=total_ad_spend, line_dash="dot", line_color="#f59e0b", annotation_text=f"Current Spend: {fmt_currency(total_ad_spend)}")
     fig.update_layout(
@@ -384,7 +460,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_acos.add_trace(go.Scatter(
             x=labels, y=[s["projected_acos_pct"] for s in scenarios],
             mode="lines+markers", name="Projected ACOS (%)",
-            line=dict(color="#f59e0b", width=2), marker=dict(size=8),
+            line=dict(color="#e71d36", width=2), marker=dict(size=8),
         ))
         if ads_metrics.get("overall_acos"):
             fig_acos.add_hline(y=ads_metrics["overall_acos"], line_dash="dash", line_color="gray",
@@ -397,7 +473,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         fig_roas.add_trace(go.Scatter(
             x=labels, y=[s["projected_roas"] or 0 for s in scenarios],
             mode="lines+markers", name="Projected ROAS",
-            line=dict(color="#3b82d4", width=2), marker=dict(size=8),
+            line=dict(color="#293C5B", width=2), marker=dict(size=8),
         ))
         if ads_metrics.get("overall_roas"):
             fig_roas.add_hline(y=ads_metrics["overall_roas"], line_dash="dash", line_color="gray",
@@ -419,15 +495,15 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
             labels=alloc_labels,
             values=alloc_budgets,
             hole=0.45,
-            marker_colors=["#3b82d4", "#7c5cd8", "#f59e0b"],
+            marker_colors=["#293C5B", "#e71d36", "#f59e0b"],
         ))
         fig_pie.update_layout(title="Total Budget Split", height=320, margin=dict(t=50, b=10, l=10, r=10))
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with ch_col2:
         fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_budgets, name="Total Budget", marker_color="#3b82d4"))
-        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_incr, name="Incremental Increase", marker_color="#7c5cd8"))
+        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_budgets, name="Total Budget", marker_color="#293C5B"))
+        fig_bar.add_trace(go.Bar(x=alloc_labels, y=alloc_incr, name="Incremental Increase", marker_color="#e71d36"))
         fig_bar.update_layout(
             barmode="group", title="Budget vs Incremental by Channel",
             height=320, margin=dict(t=50, b=30),
@@ -577,8 +653,20 @@ def render_recommendations(ads_metrics, vendor_metrics, scenarios):
 # ---------------------------------------------------------------------------
 
 def main():
-    st.title("📊 Media Plan Forecast Tool")
-    st.markdown("*Upload your Amazon Advertising report and Vendor Central ASIN report to generate a data-driven media plan with growth scenario forecasts.*")
+    # ---- Acosta Header Banner ------------------------------------------------
+    st.markdown("""
+    <div class="acosta-header">
+        <div>
+            <div class="acosta-header-title">
+                ACOSTA <span>|</span> Amazon Media Plan Forecast Tool
+            </div>
+            <div class="acosta-header-sub">
+                Omnichannel Retail Growth Catalyst &nbsp;·&nbsp; Brand Ecommerce Intelligence
+            </div>
+        </div>
+        <div class="acosta-badge">Brand Ecommerce</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     ads_file, vendor_file, growth_options, channel_split = sidebar()
 
@@ -601,6 +689,14 @@ def main():
 
         > **Tip:** You can use just one report — the tool adapts if only one is uploaded.
         """)
+        # Footer on landing page
+        st.markdown("""
+        <div class="acosta-footer">
+            <strong>Acosta</strong> · Amazon Media Plan Forecast Tool ·
+            Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager ·
+            <a href="https://www.acosta.com" target="_blank">acosta.com</a>
+        </div>
+        """, unsafe_allow_html=True)
         return
 
     # ---- Parse files -------------------------------------------------------
@@ -609,7 +705,7 @@ def main():
     ads_metrics = {}
     vendor_metrics = {}
 
-    with st.spinner("Parsing reports..."):
+    with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds..."):
         if ads_file:
             try:
                 ads_df = parse_amazon_ads_report(ads_file)
@@ -618,6 +714,8 @@ def main():
                     st.warning(f"Amazon Ads report is missing columns: {missing}. Metrics may be partial.")
                 else:
                     st.success(f"✅ Amazon Ads report loaded — {len(ads_df):,} rows, {len(ads_df.columns)} columns")
+                if len(ads_df) > 500_000:
+                    st.info(f"ℹ️ Large report ({len(ads_df):,} rows) — processing may take a moment.")
                 ads_metrics = extract_ads_metrics(ads_df)
             except Exception as e:
                 st.error(f"Error reading Amazon Ads report: {e}")
@@ -702,6 +800,15 @@ def main():
         - **Campaign Performance** — detailed campaign data
         - **ASIN Analysis** — blended ads + vendor view per ASIN
         """)
+
+    # ---- Acosta Footer --------------------------------------------------------
+    st.markdown("""
+    <div class="acosta-footer">
+        <strong>Acosta</strong> &nbsp;·&nbsp; Amazon Media Plan Forecast Tool &nbsp;·&nbsp;
+        Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager &nbsp;·&nbsp;
+        <a href="https://www.acosta.com" target="_blank">acosta.com</a>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

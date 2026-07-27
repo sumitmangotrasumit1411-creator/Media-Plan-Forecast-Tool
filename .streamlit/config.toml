@@ -1,2 +1,5 @@
 [server]
-maxUploadSize = 200
+maxUploadSize = 2048
+
+[runner]
+fastReruns = true
