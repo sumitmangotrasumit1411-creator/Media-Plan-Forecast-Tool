@@ -301,7 +301,7 @@ def _recommend_campaigns(
     campaign_df: pd.DataFrame,
     incremental_spend: float,
     growth_pct: float,
-) -> list[dict]:
+) -> list:
     """
     Suggest per-campaign budget increases based on efficiency (ROAS / ACOS).
     High-ROAS campaigns get proportionally more of the incremental budget.
