@@ -65,10 +65,25 @@ st.markdown("""
     label, .stSelectbox label, .stMultiSelect label,
     .stSlider label, .stNumberInput label { font-size: 14px !important; font-weight: 600 !important; }
 
-    /* ── Hide Streamlit's default top decoration bar ── */
+    /* ── Hide Streamlit toolbar clutter but keep sidebar toggle ── */
     #MainMenu { visibility: hidden; }
-    header[data-testid="stHeader"] { display: none !important; }
     .stDeployButton { display: none !important; }
+    /* Hide the header bar itself but keep its height so toggle button stays */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    /* Hide only the hamburger menu text & deploy items, not the toggle arrow */
+    header[data-testid="stHeader"] > div:first-child { visibility: hidden; }
+    /* Keep sidebar collapse/expand button visible */
+    button[data-testid="collapsedControl"],
+    button[kind="header"] {
+        visibility: visible !important;
+        display: flex !important;
+        background: #4f46e5 !important;
+        border-radius: 50% !important;
+        color: #ffffff !important;
+    }
 
     /* ── Page background ── */
     .stApp { background: #f0f2ff !important; }
