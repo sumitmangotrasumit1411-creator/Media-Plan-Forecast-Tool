@@ -151,10 +151,25 @@ st.markdown("""
         background: #ffffff !important;
         color: #1e1b4b !important;
     }
-    /* Step buttons (+/-) on number inputs */
-    [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
-        color: #1e1b4b !important;
-        background: #f3f4f6 !important;
+    /* Step buttons (+/-) on number inputs — button shell */
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button,
+    [data-testid="stSidebar"] [data-baseweb="input"] ~ div button,
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"],
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"] {
+        background: #4f46e5 !important;
+        border: none !important;
+        border-radius: 4px !important;
+    }
+    /* SVG icons inside the step buttons */
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button svg,
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"] svg,
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"] svg,
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] button svg path,
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"] svg path,
+    [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"] svg path {
+        fill: #ffffff !important;
+        stroke: #ffffff !important;
+        color: #ffffff !important;
     }
 
     /* File uploader */
