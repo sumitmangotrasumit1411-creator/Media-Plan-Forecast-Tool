@@ -81,7 +81,8 @@ def campaign_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     if "spend" in result.columns and "clicks" in result.columns:
         result["cpc"] = (result["spend"] / result["clicks"].replace(0, np.nan)).round(4)
 
-    return result.sort_values("spend", ascending=False)
+    sort_col = "spend" if "spend" in result.columns else result.columns[-1]
+    return result.sort_values(sort_col, ascending=False)
 
 
 def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
@@ -101,7 +102,8 @@ def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
         result["acos_%"] = (result["spend"] / result["ad_sales"].replace(0, np.nan) * 100).round(2)
         result["roas"] = (result["ad_sales"] / result["spend"].replace(0, np.nan)).round(2)
 
-    return result.sort_values("ad_sales", ascending=False)
+    sort_col = "ad_sales" if "ad_sales" in result.columns else result.columns[-1]
+    return result.sort_values(sort_col, ascending=False)
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +159,8 @@ def asin_vendor_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     if "ordered_units" in result.columns and "ordered_revenue" in result.columns:
         result["avg_price"] = (result["ordered_revenue"] / result["ordered_units"].replace(0, np.nan)).round(2)
 
-    return result.sort_values("ordered_revenue", ascending=False)
+    sort_col = "ordered_revenue" if "ordered_revenue" in result.columns else result.columns[-1]
+    return result.sort_values(sort_col, ascending=False)
 
 
 # ---------------------------------------------------------------------------
@@ -185,4 +188,5 @@ def merge_asin_view(ads_asin_df: pd.DataFrame, vendor_asin_df: pd.DataFrame) -> 
             merged["spend"] / merged["ordered_revenue"].replace(0, np.nan) * 100
         ).round(2)
 
-    return merged.sort_values("ordered_revenue", ascending=False, na_position="last")
+    sort_col = "ordered_revenue" if "ordered_revenue" in merged.columns else merged.columns[-1]
+    return merged.sort_values(sort_col, ascending=False, na_position="last")

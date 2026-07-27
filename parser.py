@@ -15,6 +15,7 @@ import io
 AD_COLUMN_ALIASES = {
     # Impressions
     "impressions": "impressions",
+    "viewable impressions": "viewable_impressions",
     # Clicks
     "clicks": "clicks",
     # Spend / Cost
@@ -22,6 +23,8 @@ AD_COLUMN_ALIASES = {
     "cost": "spend",
     "ad spend": "spend",
     "total spend": "spend",
+    "total cost": "spend",                          # All Campaign Performance Report
+    "campaign budget amount": "campaign_budget",
     # Sales (ad-attributed)
     "sales": "ad_sales",
     "attributed sales": "ad_sales",
@@ -29,13 +32,19 @@ AD_COLUMN_ALIASES = {
     "14 day total sales": "ad_sales",
     "total attributed sales": "ad_sales",
     "ad sales": "ad_sales",
-    # Orders
+    "long-term sales": "ad_sales_longterm",
+    # Orders / Purchases
     "orders": "ad_orders",
+    "purchases": "ad_orders",                       # All Campaign Performance Report
     "attributed conversions": "ad_orders",
     "total orders": "ad_orders",
+    "purchases (new to brand)": "ad_orders_ntb",
+    "cost per purchase": "cpp",
+    "cost per purchase (new to brand)": "cpp_ntb",
     # CTR
     "click-through rate (ctr)": "ctr",
     "ctr": "ctr",
+    "viewable ctr (vctr)": "vctr",
     # CPC
     "cost per click (cpc)": "cpc",
     "cpc": "cpc",
@@ -47,17 +56,39 @@ AD_COLUMN_ALIASES = {
     "roas": "roas",
     "return on ad spend (roas)": "roas",
     "total roas": "roas",
+    "long-term roas": "roas_longterm",
     # Campaign metadata
     "campaign name": "campaign_name",
     "ad group name": "ad_group_name",
     "targeting": "targeting",
+    "targeting match type": "match_type",
     "match type": "match_type",
+    "target type": "target_type",
+    "target status": "target_status",
+    "target bid": "target_bid",
+    "search term": "search_term",
+    "matched target": "matched_target",
     "asin": "asin",
     "sku": "sku",
     "portfolio name": "portfolio_name",
     "campaign type": "campaign_type",
+    "ad product": "campaign_type",                  # All Campaign Performance Report
     "advertised asin": "asin",
     "advertised sku": "sku",
+    "advertised product id": "asin",
+    "advertised product name": "product_title",
+    "advertised product brand": "brand",
+    "advertised product category": "category",
+    "advertised product subcategory": "subcategory",
+    "campaign id": "campaign_id",
+    "campaign bid strategy": "bid_strategy",
+    "date range": "date_range",
+    "advertiser account id": "account_id",
+    "advertiser account name": "account_name",
+    "top-of-search impression share (is)": "tos_is",
+    "percent of purchases new to brand": "pct_ntb_purchases",
+    "percent of sales new to brand": "pct_ntb_sales",
+    "sales (new to brand)": "sales_ntb",
 }
 
 VENDOR_COLUMN_ALIASES = {
