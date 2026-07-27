@@ -647,63 +647,92 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
     )
 
-    # ---- Scenario Comparison Table
+    # ---- Current achieved baseline row
+    current_row = pd.DataFrame([{
+        "Growth Target":        "✅ Current (Achieved)",
+        "Target Revenue ($)":   baseline_revenue,
+        "Revenue Gap ($)":      0.0,
+        "Rec. Ad Spend ($)":    total_ad_spend,
+        "Incremental Spend ($)": 0.0,
+        "Projected ACOS (%)":   ads_metrics.get("overall_acos") or 0,
+        "Projected ROAS":       ads_metrics.get("overall_roas") or 0,
+        "Projected TACOS (%)":  0.0,
+    }])
+
+    # ---- Scenario Comparison Table — current first, then growth targets
     st.markdown('<div class="section-header">📋 Scenario Comparison</div>', unsafe_allow_html=True)
     sc_df = scenarios_to_dataframe(scenarios)
-    st.dataframe(sc_df.style.format({
-        "Target Revenue ($)": "${:,.2f}",
-        "Revenue Gap ($)": "${:,.2f}",
-        "Rec. Ad Spend ($)": "${:,.2f}",
+    full_df = pd.concat([current_row, sc_df], ignore_index=True)
+    fmt = {
+        "Target Revenue ($)":    "${:,.2f}",
+        "Revenue Gap ($)":       "${:,.2f}",
+        "Rec. Ad Spend ($)":     "${:,.2f}",
         "Incremental Spend ($)": "${:,.2f}",
-        "Projected ACOS (%)": "{:.2f}%",
-        "Projected ROAS": "{:.2f}x",
-        "Projected TACOS (%)": "{:.2f}%",
-    }), use_container_width=True)
+        "Projected ACOS (%)":    "{:.2f}%",
+        "Projected ROAS":        "{:.2f}x",
+        "Projected TACOS (%)":   "{:.2f}%",
+    }
+    st.dataframe(full_df.style.format(fmt).apply(
+        lambda row: ["background-color: #f0fdf4; font-weight:700" if row["Growth Target"] == "✅ Current (Achieved)"
+                     else "" for _ in row], axis=1
+    ), use_container_width=True)
 
-    # ---- Chart: Revenue & Spend across scenarios
+    # ---- Chart: Revenue & Spend — Current first, then scenarios
     st.markdown('<div class="section-header">📈 Revenue vs Recommended Spend by Scenario</div>', unsafe_allow_html=True)
 
+    chart_labels = ["Current"] + [f"+{s['growth_pct']}%" for s in scenarios]
+    chart_revenue = [baseline_revenue] + [s["target_revenue"] for s in scenarios]
+    chart_spend   = [total_ad_spend]   + [s["recommended_spend"] for s in scenarios]
+    bar_colors_rev   = ["#6b7280"] + ["#1a0a14"] * len(scenarios)
+    bar_colors_spend = ["#9ca3af"] + ["#cc2200"] * len(scenarios)
+
     fig = go.Figure()
-    labels = [f"+{s['growth_pct']}%" for s in scenarios]
-    fig.add_trace(go.Bar(x=labels, y=[s["target_revenue"] for s in scenarios], name="Target Revenue", marker_color="#293C5B"))
-    fig.add_trace(go.Bar(x=labels, y=[s["recommended_spend"] for s in scenarios], name="Rec. Ad Spend", marker_color="#e71d36"))
-    fig.add_hline(y=baseline_revenue, line_dash="dot", line_color="gray", annotation_text=f"Current Revenue: {fmt_currency(baseline_revenue)}")
-    fig.add_hline(y=total_ad_spend, line_dash="dot", line_color="#f59e0b", annotation_text=f"Current Spend: {fmt_currency(total_ad_spend)}")
+    fig.add_trace(go.Bar(x=chart_labels, y=chart_revenue, name="Revenue", marker_color=bar_colors_rev))
+    fig.add_trace(go.Bar(x=chart_labels, y=chart_spend,   name="Ad Spend", marker_color=bar_colors_spend))
     fig.update_layout(
-        barmode="group", height=400,
+        barmode="group", height=420,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(t=60, b=40),
         yaxis_title="Amount ($)",
-        xaxis_title="Growth Scenario",
+        xaxis_title="Scenario",
+        shapes=[dict(type="line", x0=-0.5, x1=0.5, y0=0, y1=0,
+                     line=dict(color="rgba(0,0,0,0)", width=0))],
     )
+    # Vertical divider between Current and forecast scenarios
+    fig.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)",
+                  annotation_text="Forecast →", annotation_position="top right")
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Chart: ACOS & ROAS Trend
+    # ---- Chart: ACOS & ROAS — Current first, then scenarios
+    acos_labels = ["Current"] + [f"+{s['growth_pct']}%" for s in scenarios]
+    acos_values = [ads_metrics.get("overall_acos") or 0] + [s["projected_acos_pct"] for s in scenarios]
+    roas_values = [ads_metrics.get("overall_roas") or 0] + [s["projected_roas"] or 0 for s in scenarios]
+
     col1, col2 = st.columns(2)
     with col1:
         fig_acos = go.Figure()
         fig_acos.add_trace(go.Scatter(
-            x=labels, y=[s["projected_acos_pct"] for s in scenarios],
-            mode="lines+markers", name="Projected ACOS (%)",
-            line=dict(color="#e71d36", width=2), marker=dict(size=8),
+            x=acos_labels, y=acos_values,
+            mode="lines+markers", name="ACOS (%)",
+            line=dict(color="#cc2200", width=2), marker=dict(size=9),
+            marker_color=["#6b7280"] + ["#cc2200"] * len(scenarios),
         ))
-        if ads_metrics.get("overall_acos"):
-            fig_acos.add_hline(y=ads_metrics["overall_acos"], line_dash="dash", line_color="gray",
-                                annotation_text="Current ACOS")
-        fig_acos.update_layout(title="Projected ACOS by Growth Target", height=320, margin=dict(t=50, b=30))
+        fig_acos.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
+        fig_acos.update_layout(title="ACOS: Current → Projected", height=320, margin=dict(t=50, b=30),
+                                xaxis_title="Scenario", yaxis_title="ACOS (%)")
         st.plotly_chart(fig_acos, use_container_width=True)
 
     with col2:
         fig_roas = go.Figure()
         fig_roas.add_trace(go.Scatter(
-            x=labels, y=[s["projected_roas"] or 0 for s in scenarios],
-            mode="lines+markers", name="Projected ROAS",
-            line=dict(color="#293C5B", width=2), marker=dict(size=8),
+            x=acos_labels, y=roas_values,
+            mode="lines+markers", name="ROAS",
+            line=dict(color="#1a0a14", width=2), marker=dict(size=9),
+            marker_color=["#6b7280"] + ["#1a0a14"] * len(scenarios),
         ))
-        if ads_metrics.get("overall_roas"):
-            fig_roas.add_hline(y=ads_metrics["overall_roas"], line_dash="dash", line_color="gray",
-                                annotation_text="Current ROAS")
-        fig_roas.update_layout(title="Projected ROAS by Growth Target", height=320, margin=dict(t=50, b=30))
+        fig_roas.add_vline(x=0.5, line_dash="dash", line_color="rgba(107,114,128,0.4)")
+        fig_roas.update_layout(title="ROAS: Current → Projected", height=320, margin=dict(t=50, b=30),
+                                xaxis_title="Scenario", yaxis_title="ROAS")
         st.plotly_chart(fig_roas, use_container_width=True)
 
     # ---- Channel Allocation for primary scenario (+10%)
