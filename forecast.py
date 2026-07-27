@@ -180,6 +180,120 @@ def scenarios_to_dataframe(scenarios: list) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Monthly forecast with high-sales event tagging
+# ---------------------------------------------------------------------------
+
+# Known Amazon / retail high-sales events by month number
+AMAZON_EVENTS: dict = {
+    1:  [("New Year Deals", "🎉")],
+    2:  [("Valentine's Day", "💝")],
+    3:  [("Spring Sale", "🌸")],
+    4:  [],
+    5:  [("Mother's Day", "💐")],
+    6:  [("Father's Day", "👔"), ("Mid-Year Sale", "☀️")],
+    7:  [("Prime Day", "⚡"), ("Summer Sale", "🌞")],
+    8:  [("Back to School", "🎒")],
+    9:  [],
+    10: [("Pre-Holiday Push", "🍂"), ("Prime Big Deal Days", "⚡")],
+    11: [("Black Friday", "🛒"), ("Cyber Monday", "💻")],
+    12: [("Holiday Season", "🎄"), ("Year-End Sale", "🎁")],
+}
+
+# Spend multipliers for event months
+EVENT_SPEND_MULTIPLIER: dict = {
+    7:  1.30,   # Prime Day
+    10: 1.20,   # Prime Big Deal Days / Pre-Holiday
+    11: 1.45,   # Black Friday / Cyber Monday
+    12: 1.25,   # Holiday
+    2:  1.10,   # Valentine's
+    5:  1.08,   # Mother's Day
+    6:  1.08,   # Father's Day
+    8:  1.05,   # Back to School
+}
+
+
+def monthly_forecast(
+    trend_df: pd.DataFrame,
+    growth_pct: float,
+    total_ordered_revenue: float,
+    custom_channel_split: Optional[dict] = None,
+) -> pd.DataFrame:
+    """
+    Build a month-by-month media plan for a given growth scenario.
+
+    Uses actual monthly trend data as the baseline. Returns a DataFrame with
+    one row per month containing actuals, projections, event labels, and
+    channel budget splits.
+    """
+    channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
+    growth_factor = 1 + growth_pct / 100
+
+    # Build monthly actuals from trend_df
+    if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
+        work = trend_df.copy()
+        work["_month"] = pd.to_datetime(work["_period_dt"]).dt.month
+        work["_year"]  = pd.to_datetime(work["_period_dt"]).dt.year
+        latest_year = int(work["_year"].max())
+        monthly = work[work["_year"] == latest_year].copy()
+        monthly = monthly.sort_values("_month").reset_index(drop=True)
+    else:
+        monthly = pd.DataFrame()
+
+    MONTH_NAMES = [
+        "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ]
+
+    rows = []
+    for month_num in range(1, 13):
+        actual_row = monthly[monthly["_month"] == month_num] if not monthly.empty else pd.DataFrame()
+
+        actual_spend = float(actual_row["spend"].values[0])    if not actual_row.empty and "spend"    in actual_row.columns else None
+        actual_sales = float(actual_row["ad_sales"].values[0]) if not actual_row.empty and "ad_sales" in actual_row.columns else None
+        actual_acos  = float(actual_row["acos_%"].values[0])   if not actual_row.empty and "acos_%"   in actual_row.columns else None
+        actual_roas  = float(actual_row["roas"].values[0])     if not actual_row.empty and "roas"     in actual_row.columns else None
+        actual_impr  = float(actual_row["impressions"].values[0]) if not actual_row.empty and "impressions" in actual_row.columns else None
+
+        events = AMAZON_EVENTS.get(month_num, [])
+        is_event = len(events) > 0
+        event_label = " · ".join(f"{badge} {name}" for name, badge in events) if events else "—"
+        spend_multiplier = EVENT_SPEND_MULTIPLIER.get(month_num, 1.0)
+        spend_uplift_pct = round((spend_multiplier - 1) * 100, 0)
+
+        base_spend = actual_spend if actual_spend is not None else 0.0
+        base_sales = actual_sales if actual_sales is not None else 0.0
+
+        proj_spend = round(base_spend * growth_factor * spend_multiplier, 2)
+        proj_sales = round(base_sales * growth_factor, 2)
+        proj_acos  = round(proj_spend / proj_sales * 100, 2) if proj_sales > 0 else None
+        proj_roas  = round(proj_sales / proj_spend, 2)       if proj_spend > 0 else None
+
+        ch_alloc = {ch: round(proj_spend * w, 2) for ch, w in channel_split.items()}
+
+        rows.append({
+            "Month":                  month_num,
+            "Month Name":             MONTH_NAMES[month_num],
+            "Actual Spend ($)":       actual_spend,
+            "Actual Ad Sales ($)":    actual_sales,
+            "Actual ACOS (%)":        actual_acos,
+            "Actual ROAS":            actual_roas,
+            "Actual Impressions":     actual_impr,
+            "Projected Spend ($)":    proj_spend,
+            "Projected Ad Sales ($)": proj_sales,
+            "Projected ACOS (%)":     proj_acos,
+            "Projected ROAS":         proj_roas,
+            "Events":                 event_label,
+            "Is Event Month":         is_event,
+            "Spend Uplift %":         spend_uplift_pct,
+            "SP Budget ($)":          ch_alloc.get("Sponsored Products", 0),
+            "SB Budget ($)":          ch_alloc.get("Sponsored Brands", 0),
+            "SD Budget ($)":          ch_alloc.get("Sponsored Display", 0),
+        })
+
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Campaign-level recommendations
 # ---------------------------------------------------------------------------
 

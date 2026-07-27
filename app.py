@@ -18,7 +18,7 @@ from metrics import (
     asin_vendor_breakdown,
     merge_asin_view,
 )
-from forecast import run_multi_scenario, scenarios_to_dataframe, run_forecast
+from forecast import run_multi_scenario, scenarios_to_dataframe, run_forecast, monthly_forecast
 from exporter import build_excel_media_plan
 from insights import (
     search_term_analysis,
@@ -696,7 +696,7 @@ def render_campaign_analysis(ads_df, vendor_df):
 # Tab 3 — Forecast & Media Plan
 # ---------------------------------------------------------------------------
 
-def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split):
+def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split, trend_df=None):
     total_ordered_revenue = vendor_metrics.get("total_ordered_revenue", 0) if vendor_metrics else 0
     total_ad_spend = ads_metrics.get("total_spend", 0)
     total_ad_sales = ads_metrics.get("total_ad_sales", 0)
@@ -873,6 +873,168 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
                 ROAS: {roas_str} &nbsp;|&nbsp; ACOS: {acos_str}
             </div>
             """, unsafe_allow_html=True)
+
+    # ======================================================================
+    # Monthly Media Plan with High-Sales Event Highlights
+    # ======================================================================
+    st.markdown("---")
+    st.markdown('<div class="section-header">📅 Monthly Media Plan & High-Sales Events</div>', unsafe_allow_html=True)
+
+    # Scenario selector for the monthly view
+    scenario_labels = [f"+{s['growth_pct']}%" for s in scenarios]
+    if scenario_labels:
+        selected_label = st.selectbox(
+            "Select Growth Scenario for Monthly Plan:",
+            options=scenario_labels,
+            index=min(1, len(scenario_labels) - 1),  # default +10% if available
+            key="monthly_scenario_select",
+        )
+        sel_growth_pct = float(selected_label.replace("+", "").replace("%", ""))
+    else:
+        sel_growth_pct = growth_options[0] if growth_options else 10
+
+    monthly_df = monthly_forecast(
+        trend_df=trend_df,
+        growth_pct=sel_growth_pct,
+        total_ordered_revenue=baseline_revenue,
+        custom_channel_split=channel_split,
+    )
+
+    # ---- Event legend strip
+    event_months = monthly_df[monthly_df["Is Event Month"] == True]
+    if not event_months.empty:
+        legend_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px 0;">'
+        for _, row in event_months.iterrows():
+            legend_html += (
+                f'<span style="background:#fef3c7;border:1px solid #f59e0b;border-radius:20px;'
+                f'padding:4px 12px;font-size:13px;font-weight:600;color:#92400e;">'
+                f'{row["Month Name"]} — {row["Events"]}'
+                f'</span>'
+            )
+        legend_html += '</div>'
+        st.markdown(legend_html, unsafe_allow_html=True)
+
+    # ---- Dual-axis bar chart: Actual vs Projected spend, with event annotations
+    # go is already imported at the top of the file
+    months = monthly_df["Month Name"].tolist()
+    actual_spend_vals  = [v if v is not None else 0 for v in monthly_df["Actual Spend ($)"].tolist()]
+    proj_spend_vals    = monthly_df["Projected Spend ($)"].tolist()
+    proj_sales_vals    = monthly_df["Projected Ad Sales ($)"].tolist()
+    is_event           = monthly_df["Is Event Month"].tolist()
+
+    bar_colors_proj = [
+        "#f97316" if e else "#4f46e5"
+        for e in is_event
+    ]
+
+    fig_monthly = go.Figure()
+    fig_monthly.add_trace(go.Bar(
+        x=months, y=actual_spend_vals,
+        name="Actual Spend", marker_color="#9ca3af",
+        opacity=0.7,
+    ))
+    fig_monthly.add_trace(go.Bar(
+        x=months, y=proj_spend_vals,
+        name=f"Projected Spend ({selected_label if scenario_labels else '+' + str(int(sel_growth_pct)) + '%'})",
+        marker_color=bar_colors_proj,
+        opacity=0.9,
+    ))
+    fig_monthly.add_trace(go.Scatter(
+        x=months, y=proj_sales_vals,
+        name="Projected Ad Sales", mode="lines+markers",
+        line=dict(color="#10b981", width=2), marker=dict(size=8),
+        yaxis="y2",
+    ))
+
+    # Highlight event months with a shaded region
+    for i, (ev, month) in enumerate(zip(is_event, months)):
+        if ev:
+            fig_monthly.add_vrect(
+                x0=i - 0.5, x1=i + 0.5,
+                fillcolor="rgba(249,115,22,0.10)", layer="below",
+                line_width=0,
+            )
+
+    fig_monthly.update_layout(
+        barmode="group",
+        height=460,
+        yaxis=dict(title="Spend ($)", tickprefix="$"),
+        yaxis2=dict(title="Ad Sales ($)", overlaying="y", side="right", tickprefix="$", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=60, b=40),
+        xaxis_title="Month",
+        title=f"Monthly Spend & Sales — {selected_label if scenario_labels else str(int(sel_growth_pct)) + '%'} Growth Scenario  |  🟠 = High-Sales Event Month",
+    )
+    st.plotly_chart(fig_monthly, use_container_width=True)
+
+    # ---- Channel budget bar chart (SP / SB / SD per month)
+    st.markdown('<div class="section-header">💰 Monthly Channel Budget Breakdown</div>', unsafe_allow_html=True)
+    fig_ch = go.Figure()
+    fig_ch.add_trace(go.Bar(x=months, y=monthly_df["SP Budget ($)"].tolist(), name="Sponsored Products", marker_color="#4f46e5"))
+    fig_ch.add_trace(go.Bar(x=months, y=monthly_df["SB Budget ($)"].tolist(), name="Sponsored Brands",   marker_color="#f97316"))
+    fig_ch.add_trace(go.Bar(x=months, y=monthly_df["SD Budget ($)"].tolist(), name="Sponsored Display",  marker_color="#10b981"))
+    for i, ev in enumerate(is_event):
+        if ev:
+            fig_ch.add_vrect(x0=i - 0.5, x1=i + 0.5, fillcolor="rgba(249,115,22,0.10)", layer="below", line_width=0)
+    fig_ch.update_layout(
+        barmode="stack", height=380,
+        yaxis=dict(title="Budget ($)", tickprefix="$"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=50, b=40), xaxis_title="Month",
+        title="Monthly Channel Budget Split (Stacked)  |  🟠 = Event Month",
+    )
+    st.plotly_chart(fig_ch, use_container_width=True)
+
+    # ---- Projected ROAS & ACOS by month
+    roas_vals = [v if v is not None else 0 for v in monthly_df["Projected ROAS"].tolist()]
+    acos_vals = [v if v is not None else 0 for v in monthly_df["Projected ACOS (%)"].tolist()]
+    col_r, col_a = st.columns(2)
+    with col_r:
+        fig_roas_m = go.Figure()
+        fig_roas_m.add_trace(go.Scatter(
+            x=months, y=roas_vals, mode="lines+markers", name="Projected ROAS",
+            line=dict(color="#4f46e5", width=2), marker=dict(size=9, color=["#f97316" if e else "#4f46e5" for e in is_event]),
+        ))
+        fig_roas_m.update_layout(title="Monthly Projected ROAS", height=300, yaxis_title="ROAS", xaxis_title="Month", margin=dict(t=50, b=30))
+        st.plotly_chart(fig_roas_m, use_container_width=True)
+    with col_a:
+        fig_acos_m = go.Figure()
+        fig_acos_m.add_trace(go.Scatter(
+            x=months, y=acos_vals, mode="lines+markers", name="Projected ACOS",
+            line=dict(color="#f97316", width=2), marker=dict(size=9, color=["#f97316" if e else "#6b7280" for e in is_event]),
+        ))
+        fig_acos_m.update_layout(title="Monthly Projected ACOS (%)", height=300, yaxis_title="ACOS (%)", xaxis_title="Month", margin=dict(t=50, b=30))
+        st.plotly_chart(fig_acos_m, use_container_width=True)
+
+    # ---- Full monthly plan table
+    st.markdown('<div class="section-header">📋 Monthly Plan Detail Table</div>', unsafe_allow_html=True)
+
+    display_cols = [
+        "Month Name", "Events",
+        "Actual Spend ($)", "Actual Ad Sales ($)", "Actual ACOS (%)", "Actual ROAS",
+        "Projected Spend ($)", "Projected Ad Sales ($)", "Projected ACOS (%)", "Projected ROAS",
+        "Spend Uplift %", "SP Budget ($)", "SB Budget ($)", "SD Budget ($)",
+    ]
+    disp_df = monthly_df[display_cols].copy()
+
+    def _style_monthly_row(row):
+        if row["Events"] != "—":
+            return ["background-color: #fffbeb; font-weight: 600"] * len(row)
+        return [""] * len(row)
+
+    money_cols = [c for c in display_cols if "$" in c]
+    pct_cols   = [c for c in display_cols if "%" in c and c != "Spend Uplift %"]
+    fmt_map = {}
+    for c in money_cols:
+        fmt_map[c] = "${:,.0f}"
+    for c in pct_cols:
+        fmt_map[c] = "{:.1f}%"
+    fmt_map["Actual ROAS"]     = "{:.2f}x"
+    fmt_map["Projected ROAS"]  = "{:.2f}x"
+    fmt_map["Spend Uplift %"]  = "+{:.0f}%"
+
+    styled = disp_df.style.format(fmt_map, na_rep="—").apply(_style_monthly_row, axis=1)
+    st.dataframe(styled, use_container_width=True, height=460)
 
     return scenarios
 
@@ -1435,7 +1597,8 @@ def main():
     with tab5:
         if ads_df is not None or vendor_df is not None:
             scenarios = render_forecast(
-                ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split
+                ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split,
+                trend_df=trend_df,
             )
 
     with tab6:
