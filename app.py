@@ -32,87 +32,106 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Acosta Brand Colors
-# NAVY  #293C5B  |  RED  #e71d36  |  LIGHT GREY  #f4f4f4  |  WHITE #ffffff
+# Acosta Brand Colors (from official logo)
+# DARK BG  #1a0a14  |  RED  #cc2200  |  WHITE #ffffff  |  GREY #f4f4f4
 # ---------------------------------------------------------------------------
-ACOSTA_NAVY  = "#293C5B"
-ACOSTA_RED   = "#e71d36"
+ACOSTA_DARK  = "#1a0a14"
+ACOSTA_RED   = "#cc2200"
 ACOSTA_GREY  = "#f4f4f4"
-ACOSTA_MUTED = "#798da0"
+ACOSTA_MUTED = "#6b7280"
+
+# SVG logo — matches the official Acosta logo exactly:
+# dark purple/maroon background, white lowercase "acosta" wordmark,
+# red pixel-square icon top-right of the 'a'
+ACOSTA_LOGO_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 70" width="148" height="47">
+  <rect width="220" height="70" rx="4" fill="#1a0a14"/>
+  <!-- Red pixel square icon (top-right corner of the 'a') -->
+  <rect x="155" y="8"  width="9"  height="9"  fill="#cc2200"/>
+  <rect x="164" y="8"  width="9"  height="9"  fill="#8b1a1a"/>
+  <rect x="155" y="17" width="9"  height="9"  fill="#8b1a1a"/>
+  <rect x="164" y="17" width="9"  height="9"  fill="#cc2200"/>
+  <!-- "acosta" white wordmark -->
+  <text x="14" y="50" font-family="Arial Black, Arial, sans-serif"
+        font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
+</svg>
+"""
 
 st.markdown("""
 <style>
     /* ---- Acosta brand palette ---- */
     :root {
-        --acosta-navy: #293C5B;
-        --acosta-red:  #e71d36;
+        --acosta-dark: #1a0a14;
+        --acosta-red:  #cc2200;
         --acosta-grey: #f4f4f4;
-        --acosta-muted: #798da0;
+        --acosta-muted: #6b7280;
     }
 
-    /* Sidebar background */
-    [data-testid="stSidebar"] { background-color: #293C5B !important; }
+    /* Sidebar background — matches logo dark bg */
+    [data-testid="stSidebar"] { background-color: #1a0a14 !important; }
     [data-testid="stSidebar"] * { color: #ffffff !important; }
     [data-testid="stSidebar"] .stMarkdown h1,
     [data-testid="stSidebar"] .stMarkdown h2,
     [data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; }
-    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.2) !important; }
+    [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.15) !important; }
 
     /* Header banner */
     .acosta-header {
-        background: #293C5B;
-        padding: 18px 28px;
+        background: #1a0a14;
+        padding: 16px 24px;
         border-radius: 8px;
         margin-bottom: 20px;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        border-bottom: 3px solid #cc2200;
     }
-    .acosta-header-title {
-        font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;
-    }
-    .acosta-header-title span { color: #e71d36; }
+    .acosta-header-right { text-align: right; }
     .acosta-header-sub {
-        font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 4px;
+        font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 6px;
     }
     .acosta-badge {
-        background: #e71d36; color: #ffffff;
+        background: #cc2200; color: #ffffff;
         font-size: 11px; font-weight: 700;
         padding: 4px 12px; border-radius: 20px;
-        white-space: nowrap;
+        white-space: nowrap; display: inline-block;
+    }
+    .acosta-created-by {
+        font-size: 11px; color: rgba(255,255,255,0.5);
+        margin-top: 4px;
     }
 
     /* Metric cards */
     .metric-card {
-        background: #f4f4f4;
-        border: 1px solid #D0D5D2;
-        border-top: 3px solid #293C5B;
+        background: #f9f9f9;
+        border: 1px solid #e5e7eb;
+        border-top: 3px solid #1a0a14;
         border-radius: 6px;
         padding: 16px 20px;
         margin: 4px 0;
     }
-    .metric-label { font-size: 12px; color: #798da0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .metric-value { font-size: 22px; font-weight: 800; color: #293C5B; }
-    .metric-delta { font-size: 12px; color: #e71d36; font-weight: 500; }
+    .metric-label { font-size: 11px; color: #6b7280; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+    .metric-value { font-size: 22px; font-weight: 800; color: #1a0a14; }
+    .metric-delta { font-size: 12px; color: #cc2200; font-weight: 500; }
 
     /* Section headers */
     .section-header {
-        font-size: 17px; font-weight: 700; color: #293C5B;
-        border-bottom: 3px solid #e71d36; padding-bottom: 6px;
+        font-size: 17px; font-weight: 700; color: #1a0a14;
+        border-bottom: 3px solid #cc2200; padding-bottom: 6px;
         margin: 28px 0 16px 0;
     }
 
     /* Recommendation cards */
     .reco-card {
-        background: #eef2f8;
-        border-left: 4px solid #293C5B;
+        background: #fdf5f0;
+        border-left: 4px solid #1a0a14;
         padding: 12px 16px;
         border-radius: 4px;
         margin: 8px 0;
     }
     .warning-card {
         background: #fff0f0;
-        border-left: 4px solid #e71d36;
+        border-left: 4px solid #cc2200;
         padding: 12px 16px;
         border-radius: 4px;
         margin: 8px 0;
@@ -120,19 +139,19 @@ st.markdown("""
 
     /* Tabs */
     .stTabs [data-baseweb="tab"] { font-size: 14px; font-weight: 600; }
-    .stTabs [aria-selected="true"] { color: #e71d36 !important; border-bottom-color: #e71d36 !important; }
+    .stTabs [aria-selected="true"] { color: #cc2200 !important; border-bottom-color: #cc2200 !important; }
 
     /* Footer */
     .acosta-footer {
         margin-top: 40px;
         padding: 16px 0 8px;
-        border-top: 2px solid #293C5B;
+        border-top: 2px solid #1a0a14;
         text-align: center;
         font-size: 12px;
-        color: #798da0;
+        color: #6b7280;
     }
-    .acosta-footer strong { color: #293C5B; }
-    .acosta-footer a { color: #e71d36; text-decoration: none; }
+    .acosta-footer strong { color: #1a0a14; }
+    .acosta-footer a { color: #cc2200; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -184,11 +203,12 @@ def colour_acos(val):
 # ---------------------------------------------------------------------------
 
 def sidebar():
-    st.sidebar.markdown("""
-    <div style="text-align:center; padding: 10px 0 6px;">
-        <div style="font-size:20px; font-weight:900; color:#ffffff; letter-spacing:1px;">ACOSTA</div>
-        <div style="font-size:10px; color:rgba(255,255,255,0.6); margin-top:2px;">Brand Ecommerce Manager</div>
-        <div style="font-size:10px; color:rgba(255,255,255,0.5);">Sumeet Mangotra</div>
+    st.sidebar.markdown(f"""
+    <div style="text-align:center; padding:16px 0 10px;">
+        <div style="display:inline-block;">{ACOSTA_LOGO_SVG}</div>
+        <div style="font-size:10px; color:rgba(255,255,255,0.5); margin-top:8px;">
+            Sumeet Mangotra &nbsp;·&nbsp; Brand Ecommerce Manager
+        </div>
     </div>
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
@@ -654,17 +674,23 @@ def render_recommendations(ads_metrics, vendor_metrics, scenarios):
 
 def main():
     # ---- Acosta Header Banner ------------------------------------------------
-    st.markdown("""
+    st.markdown(f"""
     <div class="acosta-header">
-        <div>
-            <div class="acosta-header-title">
-                ACOSTA <span>|</span> Amazon Media Plan Forecast Tool
-            </div>
-            <div class="acosta-header-sub">
-                Omnichannel Retail Growth Catalyst &nbsp;·&nbsp; Brand Ecommerce Intelligence
+        <div style="display:flex; align-items:center; gap:20px;">
+            {ACOSTA_LOGO_SVG}
+            <div>
+                <div style="font-size:15px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
+                    Amazon Media Plan Forecast Tool
+                </div>
+                <div class="acosta-header-sub">
+                    Omnichannel Retail Growth Catalyst &nbsp;·&nbsp; Brand Ecommerce Intelligence
+                </div>
             </div>
         </div>
-        <div class="acosta-badge">Brand Ecommerce</div>
+        <div class="acosta-header-right">
+            <div class="acosta-badge">Brand Ecommerce</div>
+            <div class="acosta-created-by">Sumeet Mangotra, Brand Ecommerce Manager</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
