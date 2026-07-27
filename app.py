@@ -1,5 +1,5 @@
 """
-app.py — Media Plan Forecast Tool
+app.py — Media Plan Forecast Engine
 Streamlit application entry point.
 """
 
@@ -34,7 +34,7 @@ from trends import build_trend_df, trend_summary, ad_product_trend
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Amazon Media Plan Forecast Tool",
+    page_title="Amazon Media Plan Forecast Engine",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -53,9 +53,17 @@ C_MUTED   = "#6b7280"
 
 st.markdown("""
 <style>
+    /* ── Global font & size boost ── */
     html, body, [class*="css"] {
         font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+        font-size: 16px !important;
     }
+    p, span, div, li, td, th { font-size: 15px; line-height: 1.7; }
+    h1 { font-size: 28px !important; font-weight: 800 !important; }
+    h2 { font-size: 22px !important; font-weight: 700 !important; }
+    h3 { font-size: 18px !important; font-weight: 700 !important; }
+    label, .stSelectbox label, .stMultiSelect label,
+    .stSlider label, .stNumberInput label { font-size: 14px !important; font-weight: 600 !important; }
 
     /* ── Hide Streamlit's default top decoration bar ── */
     #MainMenu { visibility: hidden; }
@@ -70,14 +78,14 @@ st.markdown("""
         padding-right: 2rem !important;
         padding-bottom: 2rem !important;
     }
-    /* Header — full-width banner */
+    /* ── Header — full-width banner ── */
     .tool-header {
-        margin-top: 0 !important;
+        margin-top: -2rem !important;
         margin-left: -2rem !important;
         margin-right: -2rem !important;
-        margin-bottom: 28px !important;
+        margin-bottom: 32px !important;
         border-radius: 0 !important;
-        padding: 28px 40px !important;
+        padding: 36px 48px !important;
     }
 
     /* ════════════════════════════════════
@@ -136,23 +144,25 @@ st.markdown("""
         box-shadow: 0 6px 24px rgba(79,70,229,0.22);
     }
     .tool-header-title {
-        font-size: 22px;
-        font-weight: 800;
+        font-size: 28px;
+        font-weight: 900;
         color: #ffffff;
-        letter-spacing: 0.2px;
+        letter-spacing: 0.3px;
     }
     .tool-header-sub {
-        font-size: 12px;
-        color: rgba(255,255,255,0.65);
-        margin-top: 4px;
+        font-size: 14px;
+        color: rgba(255,255,255,0.7);
+        margin-top: 6px;
+        letter-spacing: 0.2px;
     }
     .tool-header-badge {
         background: #f97316;
         color: #ffffff;
-        font-size: 11px;
+        font-size: 13px;
         font-weight: 700;
-        padding: 5px 14px;
+        padding: 7px 18px;
         border-radius: 20px;
+        letter-spacing: 0.3px;
     }
 
     /* ════════════════════════════════════
@@ -177,35 +187,35 @@ st.markdown("""
         border-radius: 12px 12px 0 0;
     }
     .metric-label {
-        font-size: 10px;
+        font-size: 11px;
         color: #6b7280;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.8px;
-        margin-bottom: 6px;
+        letter-spacing: 0.9px;
+        margin-bottom: 8px;
     }
     .metric-value {
-        font-size: 24px;
+        font-size: 26px;
         font-weight: 800;
         color: #1e1b4b;
         line-height: 1.2;
     }
     .metric-delta {
-        font-size: 11px;
+        font-size: 12px;
         color: #f97316;
         font-weight: 600;
-        margin-top: 5px;
+        margin-top: 6px;
     }
 
     /* ════════════════════════════════════
        SECTION HEADERS
     ════════════════════════════════════ */
     .section-header {
-        font-size: 15px;
+        font-size: 17px;
         font-weight: 800;
         color: #1e1b4b;
-        margin: 28px 0 14px 0;
-        padding: 10px 16px;
+        margin: 32px 0 16px 0;
+        padding: 12px 18px;
         background: linear-gradient(90deg, rgba(79,70,229,0.07) 0%, transparent 100%);
         border-left: 5px solid #f97316;
         border-radius: 0 8px 8px 0;
@@ -223,10 +233,10 @@ st.markdown("""
         gap: 2px;
     }
     .stTabs [data-baseweb="tab"] {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
         color: #6b7280;
-        padding: 10px 16px;
+        padding: 11px 18px;
         border-radius: 8px 8px 0 0;
         transition: all 0.15s;
     }
@@ -324,10 +334,10 @@ st.markdown("""
     ════════════════════════════════════ */
     .tool-footer {
         margin-top: 48px;
-        padding: 20px 0 12px;
+        padding: 22px 0 14px;
         border-top: 1px solid #e0e7ff;
         text-align: center;
-        font-size: 13px;
+        font-size: 15px;
         color: #9ca3af;
         line-height: 2;
     }
@@ -361,8 +371,8 @@ st.markdown("""
         font-weight: 800; font-size: 15px;
         box-shadow: 0 2px 8px rgba(79,70,229,0.25);
     }
-    .step-text strong { font-size: 14px; color: #1e1b4b; }
-    .step-text span { font-size: 13px; color: #6b7280; display: block; margin-top: 2px; }
+    .step-text strong { font-size: 15px; color: #1e1b4b; }
+    .step-text span { font-size: 14px; color: #6b7280; display: block; margin-top: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -417,7 +427,7 @@ def sidebar():
     st.sidebar.markdown("""
     <div style="text-align:center; padding:18px 0 14px;">
         <div style="font-size:22px; font-weight:900; color:#ffffff; letter-spacing:1px;">
-            📊 Media Plan Tool
+            📊 Media Plan Engine
         </div>
         <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:4px; letter-spacing:0.5px;">
             AMAZON ADVERTISING ANALYTICS
@@ -1247,7 +1257,7 @@ def main():
     st.markdown("""
     <div class="tool-header">
         <div>
-            <div class="tool-header-title">📊 Amazon Media Plan Forecast Tool</div>
+            <div class="tool-header-title">📊 Amazon Media Plan Forecast Engine</div>
             <div class="tool-header-sub">Upload your reports · Analyse performance · Plan for growth</div>
         </div>
         <div class="tool-header-badge">Media Intelligence</div>
@@ -1301,7 +1311,7 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown("""
         <div class="tool-footer">
-            Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
+            Amazon Media Plan Forecast Engine &nbsp;&#183;&nbsp;
             Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
         </div>
         """, unsafe_allow_html=True)
@@ -1429,7 +1439,7 @@ def main():
     # ---- Footer ---------------------------------------------------------------
     st.markdown("""
     <div class="tool-footer">
-        Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
+        Amazon Media Plan Forecast Engine &nbsp;&#183;&nbsp;
         Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
     </div>
     """, unsafe_allow_html=True)
