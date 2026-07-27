@@ -58,6 +58,25 @@ st.markdown("""
     [data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; }
     [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.15) !important; }
 
+    /* File uploader — Browse files button text must be black & visible */
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+        background-color: #ffffff !important;
+        border: 2px dashed #cc2200 !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {
+        color: #1a0a14 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
+        background-color: #1a0a14 !important;
+        color: #ffffff !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button * {
+        color: #ffffff !important;
+    }
+
     /* Header banner */
     .acosta-header {
         background: #1a0a14;
@@ -202,10 +221,9 @@ def sidebar():
     </div>
     """, unsafe_allow_html=True)
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📂 Upload Reports")
+    st.sidebar.markdown("### 📤 Upload Reports")
     st.sidebar.markdown("---")
 
-    # Fix 5: wider label + explicit button label so "Browse files" is clearly visible
     st.sidebar.markdown(
         "<p style='color:#fff; font-size:13px; font-weight:600; margin-bottom:4px;'>Amazon Advertising Report</p>",
         unsafe_allow_html=True,
@@ -687,13 +705,8 @@ def main():
               <text x="14" y="50" font-family="Arial Black,Arial,sans-serif"
                     font-weight="900" font-size="34" fill="#ffffff" letter-spacing="-0.5">acosta</text>
             </svg>
-            <div>
-                <div style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
-                    Amazon Media Plan Forecast Tool
-                </div>
-                <div class="acosta-header-sub">
-                    Omnichannel Retail Growth Catalyst &#183; Brand Ecommerce Intelligence
-                </div>
+            <div style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.3px;">
+                Amazon Media Plan Forecast Tool
             </div>
         </div>
         <div class="acosta-header-right">
@@ -726,9 +739,8 @@ def main():
         # Footer on landing page
         st.markdown("""
         <div class="acosta-footer">
-            <strong>Acosta Group</strong> &nbsp;&#183;&nbsp; Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
-            Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager ·
-            <a href="https://www.acosta.com" target="_blank">acosta.com</a>
+            Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
+            Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
         </div>
         """, unsafe_allow_html=True)
         return
@@ -838,9 +850,8 @@ def main():
     # ---- Acosta Footer --------------------------------------------------------
     st.markdown("""
     <div class="acosta-footer">
-        <strong>Acosta Group</strong> &nbsp;&#183;&nbsp; Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
-        Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager &nbsp;&#183;&nbsp;
-        <a href="https://www.acosta.com" target="_blank">acosta.com</a>
+        Amazon Media Plan Forecast Tool &nbsp;&#183;&nbsp;
+        Created by <strong>Sumeet Mangotra</strong>, Brand Ecommerce Manager
     </div>
     """, unsafe_allow_html=True)
 
