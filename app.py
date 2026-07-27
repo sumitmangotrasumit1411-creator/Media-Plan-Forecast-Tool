@@ -57,22 +57,27 @@ st.markdown("""
         font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
     }
 
+    /* ── Hide Streamlit's default top decoration bar ── */
+    #MainMenu { visibility: hidden; }
+    header[data-testid="stHeader"] { display: none !important; }
+    .stDeployButton { display: none !important; }
+
     /* ── Page background ── */
     .stApp { background: #f0f2ff !important; }
     .block-container {
-        padding-top: 0 !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+        padding-top: 2rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
         padding-bottom: 2rem !important;
     }
-    /* Header — full-width banner, sits right at the top */
+    /* Header — full-width banner */
     .tool-header {
         margin-top: 0 !important;
-        margin-left: -1rem !important;
-        margin-right: -1rem !important;
+        margin-left: -2rem !important;
+        margin-right: -2rem !important;
         margin-bottom: 28px !important;
         border-radius: 0 !important;
-        padding: 32px 40px !important;
+        padding: 28px 40px !important;
     }
 
     /* ════════════════════════════════════
