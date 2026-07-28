@@ -1320,31 +1320,60 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         st.plotly_chart(fig_acos_m, use_container_width=True)
 
     # ---- Full monthly plan table
-    st.markdown('<div class="section-header">📋 Monthly Plan Detail Table</div>', unsafe_allow_html=True)
+    # Detect which year actuals come from (for column labelling)
+    actual_year = None
+    if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
+        try:
+            actual_year = int(pd.to_datetime(trend_df["_period_dt"]).dt.year.max())
+        except Exception:
+            pass
+    actual_label = f"{actual_year} Actuals" if actual_year else "Actuals"
+
+    st.markdown(
+        f'<div class="section-header">📋 Monthly Plan Detail Table'
+        f'<span style="font-size:13px;font-weight:400;color:#6b7280;margin-left:12px;">'
+        f'— {actual_label} vs {selected_label} Projected</span></div>',
+        unsafe_allow_html=True,
+    )
 
     display_cols = [
-        "Month Name", "Events",
+        "Month", "Month Name", "Events",
         "Actual Spend ($)", "Actual Ad Sales ($)", "Actual ACOS (%)", "Actual ROAS",
         "Projected Spend ($)", "Projected Ad Sales ($)", "Projected ACOS (%)", "Projected ROAS",
         "Spend Uplift %", "SP Budget ($)", "SB Budget ($)", "SD Budget ($)",
     ]
-    disp_df = monthly_df[display_cols].copy()
+    disp_df = monthly_df[[c for c in display_cols if c in monthly_df.columns]].copy()
+
+    # Rename actual columns to include year label so it's crystal clear
+    rename_map = {
+        "Actual Spend ($)":    f"Actual Spend ({actual_label}) ($)",
+        "Actual Ad Sales ($)": f"Actual Sales ({actual_label}) ($)",
+        "Actual ACOS (%)":     f"Actual ACOS ({actual_label})",
+        "Actual ROAS":         f"Actual ROAS ({actual_label})",
+    }
+    disp_df = disp_df.rename(columns=rename_map)
+
+    # Use Month (1–12) as the index so it shows 1→12, not 0→11
+    disp_df = disp_df.set_index("Month")
 
     def _style_monthly_row(row):
         if row["Events"] != "—":
             return ["background-color: #fffbeb; font-weight: 600"] * len(row)
         return [""] * len(row)
 
-    money_cols = [c for c in display_cols if "$" in c]
-    pct_cols   = [c for c in display_cols if "%" in c and c != "Spend Uplift %"]
+    # Build format map against the (possibly renamed) columns
     fmt_map = {}
-    for c in money_cols:
-        fmt_map[c] = "${:,.0f}"
-    for c in pct_cols:
-        fmt_map[c] = "{:.1f}%"
-    fmt_map["Actual ROAS"]     = "{:.2f}x"
-    fmt_map["Projected ROAS"]  = "{:.2f}x"
-    fmt_map["Spend Uplift %"]  = "+{:.0f}%"
+    for c in disp_df.columns:
+        if "$" in c:
+            fmt_map[c] = "${:,.0f}"
+        elif "ACOS" in c and "Actual" in c:
+            fmt_map[c] = "{:.1f}%"
+        elif "ACOS" in c:
+            fmt_map[c] = "{:.1f}%"
+        elif "ROAS" in c:
+            fmt_map[c] = "{:.2f}x"
+        elif "Uplift" in c:
+            fmt_map[c] = "+{:.0f}%"
 
     styled = disp_df.style.format(fmt_map, na_rep="—").apply(_style_monthly_row, axis=1)
     st.dataframe(styled, use_container_width=True, height=460)
