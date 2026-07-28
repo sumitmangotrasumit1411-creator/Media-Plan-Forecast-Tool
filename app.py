@@ -1549,8 +1549,7 @@ def render_product_tab(prod_intel: dict, ad_prod_df, bid_df, match_df=None):
             show_cols = [c for c in ["asin", "roas", "ad_sales", "spend", "acos_%", "cvr_%", "ntb_%"] if c in top_roas.columns]
             disp = top_roas[show_cols].copy()
             disp.columns = [c.replace("_", " ").replace("%", "%").title() for c in disp.columns]
-            st.dataframe(disp.style.background_gradient(subset=["Roas"] if "Roas" in disp.columns else [], cmap="Greens"),
-                         use_container_width=True, height=320)
+            st.dataframe(disp, use_container_width=True, height=320)
             if "asin" in top_roas.columns and "roas" in top_roas.columns:
                 fig_tr = go.Figure(go.Bar(
                     x=top_roas["asin"], y=top_roas["roas"],
@@ -1567,8 +1566,7 @@ def render_product_tab(prod_intel: dict, ad_prod_df, bid_df, match_df=None):
             show_cols = [c for c in ["asin", "acos_%", "spend", "ad_sales", "roas", "ad_orders"] if c in worst_acos.columns]
             disp = worst_acos[show_cols].copy()
             disp.columns = [c.replace("_", " ").replace("%", "%").title() for c in disp.columns]
-            st.dataframe(disp.style.background_gradient(subset=["Acos %"] if "Acos %" in disp.columns else [], cmap="Reds"),
-                         use_container_width=True, height=320)
+            st.dataframe(disp, use_container_width=True, height=320)
             if "asin" in worst_acos.columns and "acos_%" in worst_acos.columns:
                 fig_wa = go.Figure(go.Bar(
                     x=worst_acos["asin"], y=worst_acos["acos_%"],
