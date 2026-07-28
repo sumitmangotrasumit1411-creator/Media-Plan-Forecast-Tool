@@ -1224,288 +1224,457 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
 # ---------------------------------------------------------------------------
 
 def render_recommendations(ads_metrics, vendor_metrics, scenarios):
-    st.markdown('<div class="section-header">💡 Strategic Recommendations</div>', unsafe_allow_html=True)
-
     acos = ads_metrics.get("overall_acos")
     roas = ads_metrics.get("overall_roas")
-    ctr = ads_metrics.get("overall_ctr")
-    cpc = ads_metrics.get("overall_cpc")
+    ctr  = ads_metrics.get("overall_ctr")
+    cpc  = ads_metrics.get("overall_cpc")
+    spend = ads_metrics.get("total_spend", 0)
+    ntb   = ads_metrics.get("ntb_order_pct")
 
-    recs = []
-
-    # ACOS recommendations
+    # ── Priority alert bar ────────────────────────────────────────────────
+    alerts, greens = [], []
     if acos is not None:
-        if acos > 35:
-            recs.append(("⚠️ High ACOS Alert",
-                f"Your ACOS of {fmt_pct(acos)} is above the 35% benchmark. "
-                "Consider pausing underperforming keywords, tightening match types to exact/phrase, "
-                "and reducing bids on high-ACOS targets.", "warning"))
-        elif acos < 15:
-            recs.append(("✅ Efficient ACOS — Room to Scale",
-                f"Your ACOS of {fmt_pct(acos)} is very efficient. "
-                "You likely have headroom to increase bids and expand keyword coverage "
-                "to capture more volume without sacrificing profitability.", "reco"))
-        else:
-            recs.append(("✅ Healthy ACOS",
-                f"Your ACOS of {fmt_pct(acos)} is within a healthy range (15–35%). "
-                "Focus on scaling top-performing campaigns while monitoring efficiency.", "reco"))
-
-    # ROAS recommendations
+        if acos > 35:   alerts.append(f"🔴 ACOS {acos:.1f}% is above the 35% danger threshold")
+        elif acos < 15: greens.append(f"🟢 ACOS {acos:.1f}% is highly efficient — room to scale spend")
+        else:            greens.append(f"🟢 ACOS {acos:.1f}% is healthy (15–35% range)")
     if roas is not None:
-        if roas < 2:
-            recs.append(("⚠️ Low ROAS",
-                f"ROAS of {roas:.2f}x is below the 2x minimum threshold for most categories. "
-                "Audit your product listing quality, review pricing vs competitors, "
-                "and eliminate wasteful broad match keywords.", "warning"))
-        elif roas >= 4:
-            recs.append(("✅ Strong ROAS",
-                f"ROAS of {roas:.2f}x is strong. Increase budgets on best-performing campaigns "
-                "and consider Sponsored Brands and Sponsored Display to build brand awareness.", "reco"))
+        if roas < 2:    alerts.append(f"🔴 ROAS {roas:.2f}x is dangerously low — audit listings & match types")
+        elif roas >= 4: greens.append(f"🟢 ROAS {roas:.2f}x is strong — consider expanding budgets")
+    if ctr is not None and ctr < 0.3:
+        alerts.append(f"🟡 CTR {ctr:.2f}% is below 0.3% — main image or title may need improvement")
+    if cpc is not None and cpc > 2.5:
+        alerts.append(f"🟡 CPC ${cpc:.2f} is elevated — review bid strategy and match types")
+    if ntb is not None and ntb > 50:
+        greens.append(f"🟢 {ntb:.0f}% of orders are New to Brand — strong customer acquisition")
 
-    # CTR
-    if ctr is not None:
-        if ctr < 0.3:
-            recs.append(("⚠️ Low CTR",
-                f"CTR of {fmt_pct(ctr)} is below the 0.3% baseline. "
-                "Review main image quality, title relevance, and consider A+ content or "
-                "enhanced listing optimisation to improve click rates.", "warning"))
+    if alerts or greens:
+        st.markdown('<div class="section-header">🚨 Performance Health Check</div>', unsafe_allow_html=True)
+        col_a, col_g = st.columns(2)
+        with col_a:
+            for a in alerts:
+                st.markdown(f'<div class="warning-card" style="margin-bottom:8px;">{a}</div>', unsafe_allow_html=True)
+        with col_g:
+            for g in greens:
+                st.markdown(f'<div class="reco-card" style="margin-bottom:8px;">{g}</div>', unsafe_allow_html=True)
 
-    # Growth scenario insights
+    # ── Scenario-driven spend action cards ───────────────────────────────
     if scenarios:
-        s10 = next((s for s in scenarios if s["growth_pct"] == 10), None)
-        if s10:
-            recs.append(("📈 To Achieve +10% Sales Growth",
-                f"Increase total ad spend from {fmt_currency(s10['current_ad_spend'])} to "
-                f"{fmt_currency(s10['recommended_spend'])} "
-                f"(+{fmt_currency(s10['incremental_spend'])} incremental). "
-                f"Expected ACOS: {fmt_pct(s10['projected_acos_pct'])}, "
-                f"ROAS: {s10['projected_roas']:.2f}x. "
-                f"Prioritise Sponsored Products (65%) for conversion-focused spend.", "reco"))
+        st.markdown('<div class="section-header">📈 Growth Scenario Action Plans</div>', unsafe_allow_html=True)
+        for s in scenarios[:4]:   # show up to 4 scenarios
+            gpct  = s["growth_pct"]
+            delta = s["incremental_spend"]
+            rec   = s["recommended_spend"]
+            tacos = s.get("projected_tacos_pct") or 0
+            proas = s.get("projected_roas") or 0
+            alloc = s.get("channel_allocation", {})
+            sp_b  = alloc.get("Sponsored Products", {}).get("budget", 0)
+            sb_b  = alloc.get("Sponsored Brands",   {}).get("budget", 0)
+            sd_b  = alloc.get("Sponsored Display",  {}).get("budget", 0)
+            label = f"+{gpct:.0f}%" if gpct >= 0 else f"{gpct:.0f}%"
+            is_custom = s.get("is_custom_scenario", False)
+            badge = "🎯 Custom" if is_custom else f"📈 {label} Growth"
+            st.markdown(f"""
+            <div class="reco-card" style="margin-bottom:12px;">
+                <div style="font-size:16px;font-weight:800;margin-bottom:6px;">{badge} — Target Revenue: {fmt_currency(s['target_revenue'])}</div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;">
+                    <div style="background:#f0f2ff;border-radius:8px;padding:8px 12px;text-align:center;">
+                        <div style="font-size:11px;color:#6b7280;font-weight:600;">REC. AD SPEND</div>
+                        <div style="font-size:18px;font-weight:800;color:#4f46e5;">{fmt_currency(rec)}</div>
+                        <div style="font-size:11px;color:#f97316;">+{fmt_currency(delta)} incremental</div>
+                    </div>
+                    <div style="background:#f0f2ff;border-radius:8px;padding:8px 12px;text-align:center;">
+                        <div style="font-size:11px;color:#6b7280;font-weight:600;">PROJ. ROAS</div>
+                        <div style="font-size:18px;font-weight:800;color:#4f46e5;">{proas:.2f}x</div>
+                        <div style="font-size:11px;color:#6b7280;">vs current {(roas or 0):.2f}x</div>
+                    </div>
+                    <div style="background:#f0f2ff;border-radius:8px;padding:8px 12px;text-align:center;">
+                        <div style="font-size:11px;color:#6b7280;font-weight:600;">PROJ. TACOS</div>
+                        <div style="font-size:18px;font-weight:800;color:#f97316;">{tacos:.1f}%</div>
+                        <div style="font-size:11px;color:#6b7280;">total ad cost ratio</div>
+                    </div>
+                    <div style="background:#f0f2ff;border-radius:8px;padding:8px 12px;text-align:center;">
+                        <div style="font-size:11px;color:#6b7280;font-weight:600;">CHANNEL SPLIT</div>
+                        <div style="font-size:13px;font-weight:700;color:#1e1b4b;">SP {fmt_currency(sp_b)}</div>
+                        <div style="font-size:12px;color:#f97316;">SB {fmt_currency(sb_b)} · SD {fmt_currency(sd_b)}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    # Channel strategy
-    recs.append(("🎯 Channel Investment Strategy",
-        "**Sponsored Products (65%)** — Direct response, conversion-focused. Invest here first for ROAS efficiency. "
-        "Use auto campaigns for discovery and manual exact/phrase for scaling winners. "
-        "**Sponsored Brands (25%)** — Top-of-funnel awareness and brand store traffic. "
-        "Run video ads for high-converting ASINs. "
-        "**Sponsored Display (10%)** — Retargeting and competitor conquesting. "
-        "Use for remarketing to product detail page visitors.", "reco"))
+    # ── Channel investment strategy ───────────────────────────────────────
+    st.markdown('<div class="section-header">🎯 Channel Investment Strategy</div>', unsafe_allow_html=True)
+    ch_cols = st.columns(3)
+    channel_cards = [
+        ("#4f46e5", "⚡ Sponsored Products", "Direct-response, highest ROAS",
+         ["Prioritise exact/phrase match for conversion efficiency",
+          "Run auto campaigns to discover new high-converting terms",
+          "Scale budgets on your top 20% ASINs by ROAS",
+          "Set dynamic bids — Up & Down for proven keywords"]),
+        ("#f97316", "🏷️ Sponsored Brands", "Top-of-funnel & brand equity",
+         ["Launch video ads for your hero ASINs — 2–3x higher CTR",
+          "Drive traffic to Brand Store for higher basket size",
+          "Use headline search for category defence against competitors",
+          "Target shoppers browsing competitor brand pages"]),
+        ("#10b981", "🎯 Sponsored Display", "Retargeting & conquesting",
+         ["Remarket to product detail page visitors (high intent)",
+          "Target competitor ASINs with price/review advantage",
+          "Use audience targeting for category interest shoppers",
+          "Run lifestyle creatives for awareness campaigns"]),
+    ]
+    for col, (color, title, sub, bullets) in zip(ch_cols, channel_cards):
+        with col:
+            bullet_html = "".join(f'<li style="margin-bottom:4px;">{b}</li>' for b in bullets)
+            st.markdown(f"""
+            <div style="background:#ffffff;border-top:4px solid {color};border-radius:10px;
+                        padding:16px;height:100%;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                <div style="font-size:15px;font-weight:800;color:{color};margin-bottom:4px;">{title}</div>
+                <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">{sub}</div>
+                <ul style="font-size:13px;color:#374151;padding-left:18px;margin:0;">{bullet_html}</ul>
+            </div>
+            """, unsafe_allow_html=True)
 
-    recs.append(("📅 Seasonal Budget Planning",
-        "Increase budgets 2–3 weeks before peak events (Prime Day, Black Friday, Cyber Monday, Q4). "
-        "Build enough keyword history and quality score before the peak window. "
-        "Recommended: +30–50% budget increase 2 weeks before peak, "
-        "+15–20% during peak recovery phase.", "reco"))
+    # ── Seasonal budget calendar ──────────────────────────────────────────
+    st.markdown('<div class="section-header">📅 Seasonal Budget Uplift Calendar</div>', unsafe_allow_html=True)
+    events = [
+        ("Feb", "Valentine's Day", "+10%", "#f97316"),
+        ("May", "Mother's Day",    "+8%",  "#f97316"),
+        ("Jun", "Father's Day",    "+8%",  "#f97316"),
+        ("Jul", "Prime Day ⚡",    "+30%", "#dc2626"),
+        ("Aug", "Back to School",  "+5%",  "#f59e0b"),
+        ("Oct", "Prime Big Deals ⚡","+20%","#dc2626"),
+        ("Nov", "Black Friday 🛒", "+45%", "#dc2626"),
+        ("Nov", "Cyber Monday 💻", "+45%", "#dc2626"),
+        ("Dec", "Holiday Season 🎄","+25%","#dc2626"),
+    ]
+    ev_cols = st.columns(len(events))
+    for col, (month, name, uplift, color) in zip(ev_cols, events):
+        with col:
+            st.markdown(f"""
+            <div style="background:#ffffff;border-radius:8px;padding:10px 6px;text-align:center;
+                        border-top:3px solid {color};box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+                <div style="font-size:11px;font-weight:800;color:#6b7280;">{month}</div>
+                <div style="font-size:12px;font-weight:700;color:#1e1b4b;line-height:1.3;">{name}</div>
+                <div style="font-size:16px;font-weight:900;color:{color};margin-top:4px;">{uplift}</div>
+                <div style="font-size:10px;color:#9ca3af;">budget uplift</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    recs.append(("🔍 ASIN Prioritisation",
-        "Focus incremental ad spend on your top 20% of ASINs by ordered revenue — "
-        "these typically drive 80% of sales. "
-        "For new ASINs with < 30 reviews, use auto campaigns with aggressive bids to build ranking history. "
-        "Avoid heavy spend on ASINs below 3.5★ rating until listing quality is improved.", "reco"))
+    st.markdown("""
+    <div class="reco-card" style="margin-top:14px;">
+        <strong>Seasonal Playbook:</strong> Increase budgets <strong>2–3 weeks before</strong> each peak event —
+        Amazon's algorithm needs lead time to ramp impression share. During the event, monitor
+        hourly pacing and be ready to increase daily budgets if you hit cap before noon.
+        Post-event, run a 1-week recovery phase at +15% to capture residual demand.
+    </div>""", unsafe_allow_html=True)
 
-    # Render
-    for title, body, card_type in recs:
-        css_class = "reco-card" if card_type == "reco" else "warning-card"
-        st.markdown(f"""
-        <div class="{css_class}">
-            <strong>{title}</strong><br>
-            {body}
+    # ── ASIN prioritisation ───────────────────────────────────────────────
+    st.markdown('<div class="section-header">🔍 ASIN & Bid Strategy Priorities</div>', unsafe_allow_html=True)
+    p1, p2 = st.columns(2)
+    with p1:
+        st.markdown("""
+        <div style="background:#ffffff;border-radius:10px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+            <div style="font-weight:800;font-size:15px;color:#4f46e5;margin-bottom:10px;">📦 ASIN Investment Tiers</div>
+            <div style="margin-bottom:8px;padding:8px 12px;background:#f0fdf4;border-radius:6px;border-left:4px solid #10b981;">
+                <strong>🟢 Tier 1 — Scale (ROAS &gt; 4x, ACOS &lt; 20%)</strong><br>
+                <span style="font-size:13px;">Increase bids +20–30%. Move winning search terms to exact match. Push SB video.</span>
+            </div>
+            <div style="margin-bottom:8px;padding:8px 12px;background:#fffbeb;border-radius:6px;border-left:4px solid #f59e0b;">
+                <strong>🟡 Tier 2 — Optimise (ACOS 20–35%)</strong><br>
+                <span style="font-size:13px;">Hold budgets. Harvest exact match terms. Prune broad match waste weekly.</span>
+            </div>
+            <div style="padding:8px 12px;background:#fef2f2;border-radius:6px;border-left:4px solid #dc2626;">
+                <strong>🔴 Tier 3 — Review or Pause (ACOS &gt; 35%)</strong><br>
+                <span style="font-size:13px;">Audit listing (images, reviews, price). Reduce bids -30% or pause for 2 weeks.</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with p2:
+        st.markdown("""
+        <div style="background:#ffffff;border-radius:10px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+            <div style="font-weight:800;font-size:15px;color:#f97316;margin-bottom:10px;">⚙️ Bid Strategy Guide</div>
+            <div style="margin-bottom:8px;padding:8px 12px;background:#f0f2ff;border-radius:6px;border-left:4px solid #4f46e5;">
+                <strong>Dynamic Up &amp; Down</strong> — Best for proven top performers<br>
+                <span style="font-size:13px;">Amazon adjusts bids in real time for high-conversion placements. Use for exact match winners.</span>
+            </div>
+            <div style="margin-bottom:8px;padding:8px 12px;background:#f0f2ff;border-radius:6px;border-left:4px solid #4f46e5;">
+                <strong>Dynamic Down Only</strong> — Best for efficiency campaigns<br>
+                <span style="font-size:13px;">Protects ACOS ceiling. Ideal for broad/phrase terms still being tested.</span>
+            </div>
+            <div style="padding:8px 12px;background:#f0f2ff;border-radius:6px;border-left:4px solid #4f46e5;">
+                <strong>Fixed Bids</strong> — Best for competitor / conquesting<br>
+                <span style="font-size:13px;">Full control. Use for Sponsored Display retargeting where you set the ceiling precisely.</span>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
-# Tab — Search Term Intelligence
+# Tab — Product Intelligence (super-refined)
 # ---------------------------------------------------------------------------
 
-def render_search_term_tab(st_insights: dict, wasted: dict, match_df):
-    if not st_insights:
-        st.info("No search term data found in your report. This tab requires a report with a 'Search term' column.")
+def render_product_tab(prod_intel: dict, ad_prod_df, bid_df, match_df=None):
+    if not prod_intel and ad_prod_df.empty and (match_df is None or match_df.empty):
+        st.info("No product-level data found. This tab requires 'Advertised product ID' or campaign-type columns in your report.")
         return
 
-    # Wasted spend banner
-    if wasted:
-        w_amt = wasted.get("wasted_spend", 0)
-        w_pct = wasted.get("wasted_pct", 0)
-        col_w1, col_w2, col_w3 = st.columns(3)
-        with col_w1:
-            st.markdown(metric_card("💸 Wasted Spend", fmt_currency(w_amt), f"{w_pct}% of total budget — zero purchases"), unsafe_allow_html=True)
-        with col_w2:
-            st.markdown(metric_card("✅ Productive Spend", fmt_currency(wasted.get("total_spend", 0) - w_amt), "Generated at least 1 purchase"), unsafe_allow_html=True)
-        with col_w3:
-            recoverable = w_amt * 0.6
-            st.markdown(metric_card("💡 Recoverable Budget", fmt_currency(recoverable), "Est. reclaimable for better keywords"), unsafe_allow_html=True)
-
-    # Top converting search terms
-    st.markdown('<div class="section-header">🏆 Top Converting Search Terms</div>', unsafe_allow_html=True)
-    top_df = st_insights.get("top_converting", pd.DataFrame())
-    if not top_df.empty:
-        cols = [c for c in ["search_term", "ad_sales", "spend", "acos_%", "roas", "cvr_%", "ad_orders", "clicks"] if c in top_df.columns]
-        disp = top_df[cols].head(20).copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=360)
-
-        # Bar chart — top 10 by sales
-        if "search_term" in top_df.columns and "ad_sales" in top_df.columns:
-            fig = go.Figure()
-            t10 = top_df.head(10)
-            fig.add_trace(go.Bar(x=t10["search_term"], y=t10["ad_sales"], name="Ad Sales", marker_color="#4f46e5"))
-            if "spend" in t10.columns:
-                fig.add_trace(go.Bar(x=t10["search_term"], y=t10["spend"], name="Spend", marker_color="#f97316"))
-            fig.update_layout(barmode="group", title="Top 10 Search Terms: Sales vs Spend",
-                              xaxis_tickangle=-35, height=380, margin=dict(t=50, b=100),
-                              legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Wasted spend table
-    st.markdown('<div class="section-header">⚠️ Wasted Spend — Clicks with Zero Purchases</div>', unsafe_allow_html=True)
-    waste_df = st_insights.get("wasted_spend", pd.DataFrame())
-    if not waste_df.empty:
-        cols = [c for c in ["search_term", "spend", "clicks", "impressions"] if c in waste_df.columns]
-        disp = waste_df[cols].head(20).copy()
-        disp.columns = [c.replace("_", " ").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=300)
-        st.markdown(f"""
-        <div class="warning-card">
-            <strong>Action:</strong> Add these search terms as <strong>negative keywords</strong> in your campaigns
-            to stop wasting budget. Total recoverable spend: <strong>{fmt_currency(wasted.get("wasted_spend", 0))}</strong>
-        </div>""", unsafe_allow_html=True)
-    else:
-        st.success("No pure wasted spend detected — all search terms with clicks have at least one purchase.")
-
-    # NTB Leaders
-    ntb_df = st_insights.get("ntb_leaders", pd.DataFrame())
-    if not ntb_df.empty:
-        st.markdown('<div class="section-header">🆕 New to Brand Leaders</div>', unsafe_allow_html=True)
-        cols = [c for c in ["search_term", "ntb_%", "ad_orders_ntb", "ad_orders", "spend", "ad_sales"] if c in ntb_df.columns]
-        disp = ntb_df[cols].head(15).copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=280)
-        st.markdown("""<div class="reco-card">
-            <strong>Insight:</strong> These search terms drive a high % of first-time buyers.
-            Increase bids on these terms to grow your customer base and long-term brand value.
-        </div>""", unsafe_allow_html=True)
-
-    # Harvest candidates
-    harvest_df = st_insights.get("harvest_candidates", pd.DataFrame())
-    if not harvest_df.empty:
-        st.markdown('<div class="section-header">🌱 Keyword Harvest Candidates</div>', unsafe_allow_html=True)
-        cols = [c for c in ["search_term", "cvr_%", "ad_orders", "spend", "acos_%"] if c in harvest_df.columns]
-        disp = harvest_df[cols].head(15).copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=280)
-        st.markdown("""<div class="reco-card">
-            <strong>Action:</strong> Add these high-converting search terms as <strong>Exact Match</strong>
-            keywords in your manual campaigns to capture volume efficiently.
-        </div>""", unsafe_allow_html=True)
-
-    # Match type efficiency
-    if not match_df.empty:
-        st.markdown('<div class="section-header">🎯 Match Type Efficiency</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            cols = [c for c in ["match_type", "spend", "ad_sales", "acos_%", "roas", "cvr_%", "cpc"] if c in match_df.columns]
-            disp = match_df[cols].copy()
-            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-            st.dataframe(disp, use_container_width=True)
-        with c2:
-            if "acos_%" in match_df.columns and "match_type" in match_df.columns:
-                fig_mt = go.Figure()
-                fig_mt.add_trace(go.Bar(x=match_df["match_type"], y=match_df["acos_%"], marker_color="#f97316", name="ACOS %"))
-                fig_mt.update_layout(title="ACOS by Match Type", height=300, margin=dict(t=50, b=30))
-                st.plotly_chart(fig_mt, use_container_width=True)
-
-
-# ---------------------------------------------------------------------------
-# Tab — Product Intelligence
-# ---------------------------------------------------------------------------
-
-def render_product_tab(prod_intel: dict, ad_prod_df, bid_df):
-    if not prod_intel:
-        st.info("No ASIN-level data found. This tab requires 'Advertised product ID' in your report.")
-        return
-
-    # Ad product type breakdown
+    # ── 1. Ad Product (SP / SB / SD) KPI strip ───────────────────────────
     if not ad_prod_df.empty:
-        st.markdown('<div class="section-header">📢 Ad Product Type Breakdown (SP / SB / SD)</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            cols = [c for c in ["ad_product", "spend", "ad_sales", "acos_%", "roas", "spend_share_%"] if c in ad_prod_df.columns]
-            disp = ad_prod_df[cols].copy()
-            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-            st.dataframe(disp, use_container_width=True)
-        with c2:
-            if "spend" in ad_prod_df.columns and "ad_product" in ad_prod_df.columns:
+        st.markdown('<div class="section-header">📢 Ad Type Performance — SP · SB · SD</div>', unsafe_allow_html=True)
+        kpi_cols = st.columns(len(ad_prod_df))
+        colors_map = {"Sponsored Products": "#4f46e5", "Sponsored Brands": "#f97316", "Sponsored Display": "#10b981"}
+        for col, (_, row) in zip(kpi_cols, ad_prod_df.iterrows()):
+            prod_name = str(row.get("ad_product", "Unknown"))
+            color = colors_map.get(prod_name, "#6b7280")
+            short = prod_name.replace("Sponsored ", "SP").replace("Products","SP").replace("Brands","SB").replace("Display","SD")
+            short = prod_name  # keep full name
+            roas_v = f"{row['roas']:.2f}x" if "roas" in row and pd.notna(row["roas"]) else "—"
+            acos_v = f"{row['acos_%']:.1f}%" if "acos_%" in row and pd.notna(row["acos_%"]) else "—"
+            shr_v  = f"{row['spend_share_%']:.0f}%" if "spend_share_%" in row and pd.notna(row.get("spend_share_%")) else "—"
+            with col:
+                st.markdown(f"""
+                <div style="background:#ffffff;border-top:4px solid {color};border-radius:10px;
+                            padding:14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                    <div style="font-size:12px;font-weight:800;color:{color};">{prod_name}</div>
+                    <div style="font-size:22px;font-weight:900;color:#1e1b4b;margin:4px 0;">{fmt_currency(row.get('spend',0))}</div>
+                    <div style="font-size:12px;color:#6b7280;">Spend · {shr_v} of total</div>
+                    <div style="display:flex;justify-content:space-around;margin-top:8px;">
+                        <span style="font-size:13px;"><b style="color:{color};">{roas_v}</b><br><span style="color:#9ca3af;font-size:11px;">ROAS</span></span>
+                        <span style="font-size:13px;"><b style="color:#f97316;">{acos_v}</b><br><span style="color:#9ca3af;font-size:11px;">ACOS</span></span>
+                        <span style="font-size:13px;"><b style="color:#1e1b4b;">{fmt_currency(row.get('ad_sales',0))}</b><br><span style="color:#9ca3af;font-size:11px;">Sales</span></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Pie + grouped bar side-by-side
+        st.markdown("<div style='margin-top:18px;'></div>", unsafe_allow_html=True)
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            if "spend" in ad_prod_df.columns:
+                palette = [colors_map.get(p, "#6b7280") for p in ad_prod_df["ad_product"]]
                 fig_pie = go.Figure(go.Pie(
-                    labels=ad_prod_df["ad_product"],
-                    values=ad_prod_df["spend"],
-                    hole=0.45,
-                    marker_colors=["#1a0a14", "#cc2200", "#798da0", "#f4f4f4"],
+                    labels=ad_prod_df["ad_product"], values=ad_prod_df["spend"],
+                    hole=0.5, marker_colors=palette,
+                    textinfo="label+percent", textfont_size=13,
                 ))
-                fig_pie.update_layout(title="Spend Share by Ad Product", height=300, margin=dict(t=50, b=10))
+                fig_pie.update_layout(title="Budget Share by Ad Type", height=300,
+                                      margin=dict(t=40, b=10, l=10, r=10),
+                                      showlegend=False)
                 st.plotly_chart(fig_pie, use_container_width=True)
+        with pc2:
+            if all(c in ad_prod_df.columns for c in ["ad_product", "spend", "ad_sales"]):
+                fig_grp = go.Figure()
+                fig_grp.add_trace(go.Bar(x=ad_prod_df["ad_product"], y=ad_prod_df["spend"],
+                                         name="Spend", marker_color="#4f46e5"))
+                fig_grp.add_trace(go.Bar(x=ad_prod_df["ad_product"], y=ad_prod_df["ad_sales"],
+                                         name="Ad Sales", marker_color="#f97316"))
+                fig_grp.update_layout(barmode="group", title="Spend vs Sales by Ad Type",
+                                      height=300, margin=dict(t=40, b=30),
+                                      legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"))
+                st.plotly_chart(fig_grp, use_container_width=True)
 
-    # Top ROAS ASINs
-    top_roas = prod_intel.get("top_roas", pd.DataFrame())
-    if not top_roas.empty:
-        st.markdown('<div class="section-header">🚀 Top 10 ASINs by ROAS — Scale These</div>', unsafe_allow_html=True)
-        cols = [c for c in ["asin", "product_title", "roas", "ad_sales", "spend", "acos_%", "cvr_%", "ntb_%"] if c in top_roas.columns]
-        disp = top_roas[cols].copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=300)
+    # ── 2. ASIN Efficiency Quadrant ───────────────────────────────────────
+    all_asins = prod_intel.get("by_asin", pd.DataFrame())
+    if not all_asins.empty and "roas" in all_asins.columns and "acos_%" in all_asins.columns:
+        st.markdown('<div class="section-header">🔬 ASIN Efficiency Quadrant</div>', unsafe_allow_html=True)
+        quad = all_asins.dropna(subset=["roas", "acos_%"]).copy()
+        median_roas = quad["roas"].median()
+        median_acos = quad["acos_%"].median()
 
-        if "asin" in top_roas.columns and "roas" in top_roas.columns:
-            fig_roas = go.Figure(go.Bar(
-                x=top_roas["asin"], y=top_roas["roas"],
-                marker_color="#4f46e5", text=top_roas["roas"].round(1), textposition="outside",
+        def _quadrant(row):
+            if row["roas"] >= median_roas and row["acos_%"] <= median_acos:
+                return "🟢 Scale"
+            elif row["roas"] >= median_roas and row["acos_%"] > median_acos:
+                return "🟡 Optimise"
+            elif row["roas"] < median_roas and row["acos_%"] <= median_acos:
+                return "🟡 Monitor"
+            else:
+                return "🔴 Review"
+
+        quad["Quadrant"] = quad.apply(_quadrant, axis=1)
+        color_map = {"🟢 Scale": "#10b981", "🟡 Optimise": "#f59e0b",
+                     "🟡 Monitor": "#6366f1", "🔴 Review": "#dc2626"}
+        size_col = "ad_sales" if "ad_sales" in quad.columns else None
+
+        fig_quad = go.Figure()
+        for q_label, q_color in color_map.items():
+            sub = quad[quad["Quadrant"] == q_label]
+            if sub.empty:
+                continue
+            fig_quad.add_trace(go.Scatter(
+                x=sub["roas"], y=sub["acos_%"],
+                mode="markers",
+                name=q_label,
+                marker=dict(
+                    size=[max(8, min(30, v / (sub["ad_sales"].max() / 20))) for v in sub.get("ad_sales", [12] * len(sub))] if size_col else 12,
+                    color=q_color, opacity=0.8, line=dict(width=1, color="#ffffff"),
+                ),
+                text=sub.get("asin", sub.index),
+                hovertemplate="<b>%{text}</b><br>ROAS: %{x:.2f}x<br>ACOS: %{y:.1f}%<extra></extra>",
             ))
-            fig_roas.update_layout(title="Top ASINs by ROAS", height=320, margin=dict(t=50, b=40))
-            st.plotly_chart(fig_roas, use_container_width=True)
+        fig_quad.add_vline(x=median_roas, line_dash="dash", line_color="#6b7280",
+                           annotation_text=f"Median ROAS {median_roas:.1f}x")
+        fig_quad.add_hline(y=median_acos, line_dash="dash", line_color="#6b7280",
+                           annotation_text=f"Median ACOS {median_acos:.1f}%")
+        fig_quad.update_layout(
+            title="ASIN Quadrant: ROAS vs ACOS  (bubble size = Ad Sales)",
+            xaxis_title="ROAS", yaxis_title="ACOS (%)",
+            height=460, margin=dict(t=60, b=40),
+            legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+        )
+        st.plotly_chart(fig_quad, use_container_width=True)
 
-    # Worst ACOS ASINs
+        # Quadrant summary counts
+        qsum = quad["Quadrant"].value_counts().reset_index()
+        qsum.columns = ["Quadrant", "ASIN Count"]
+        q_cols = st.columns(4)
+        for col, (_, row) in zip(q_cols, qsum.iterrows()):
+            c = color_map.get(row["Quadrant"], "#6b7280")
+            with col:
+                st.markdown(f"""
+                <div style="background:#ffffff;border-left:4px solid {c};border-radius:8px;
+                            padding:10px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+                    <div style="font-size:22px;font-weight:900;color:{c};">{row['ASIN Count']}</div>
+                    <div style="font-size:13px;color:#374151;">{row['Quadrant']} ASINs</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ── 3. Top ROAS & Worst ACOS side-by-side ────────────────────────────
+    top_roas   = prod_intel.get("top_roas",   pd.DataFrame())
     worst_acos = prod_intel.get("worst_acos", pd.DataFrame())
-    if not worst_acos.empty:
-        st.markdown('<div class="section-header">🔴 Top 10 ASINs by ACOS — Review or Pause</div>', unsafe_allow_html=True)
-        cols = [c for c in ["asin", "product_title", "acos_%", "spend", "ad_sales", "roas", "ad_orders"] if c in worst_acos.columns]
-        disp = worst_acos[cols].copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True, height=300)
-        st.markdown("""<div class="warning-card">
-            <strong>Action:</strong> Review these ASINs — check listing quality, pricing vs competitors,
-            and review quality. Consider pausing or reducing bids until the issues are resolved.
-        </div>""", unsafe_allow_html=True)
 
-    # Category rollup
-    cat_df = prod_intel.get("by_category", pd.DataFrame())
-    if not cat_df.empty:
-        st.markdown('<div class="section-header">🗂️ Category Performance Rollup</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            cols = [c for c in ["category", "spend", "ad_sales", "acos_%", "roas", "ad_orders"] if c in cat_df.columns]
-            disp = cat_df[cols].copy()
-            disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-            st.dataframe(disp, use_container_width=True)
-        with c2:
-            if "category" in cat_df.columns and "ad_sales" in cat_df.columns:
-                fig_cat = go.Figure(go.Bar(
-                    x=cat_df["category"], y=cat_df["ad_sales"],
-                    marker_color="#f97316", name="Ad Sales",
+    t1, t2 = st.columns(2)
+    with t1:
+        if not top_roas.empty:
+            st.markdown('<div class="section-header">🚀 Top 10 ASINs by ROAS — Scale These</div>', unsafe_allow_html=True)
+            show_cols = [c for c in ["asin", "roas", "ad_sales", "spend", "acos_%", "cvr_%", "ntb_%"] if c in top_roas.columns]
+            disp = top_roas[show_cols].copy()
+            disp.columns = [c.replace("_", " ").replace("%", "%").title() for c in disp.columns]
+            st.dataframe(disp.style.background_gradient(subset=["Roas"] if "Roas" in disp.columns else [], cmap="Greens"),
+                         use_container_width=True, height=320)
+            if "asin" in top_roas.columns and "roas" in top_roas.columns:
+                fig_tr = go.Figure(go.Bar(
+                    x=top_roas["asin"], y=top_roas["roas"],
+                    marker_color="#10b981",
+                    text=[f"{v:.1f}x" for v in top_roas["roas"]], textposition="outside",
                 ))
-                fig_cat.update_layout(title="Ad Sales by Category", height=300,
-                                      xaxis_tickangle=-30, margin=dict(t=50, b=80))
+                fig_tr.update_layout(title="ROAS by ASIN", height=280,
+                                     margin=dict(t=40, b=60), xaxis_tickangle=-35)
+                st.plotly_chart(fig_tr, use_container_width=True)
+
+    with t2:
+        if not worst_acos.empty:
+            st.markdown('<div class="section-header">🔴 Top 10 ASINs by ACOS — Review or Pause</div>', unsafe_allow_html=True)
+            show_cols = [c for c in ["asin", "acos_%", "spend", "ad_sales", "roas", "ad_orders"] if c in worst_acos.columns]
+            disp = worst_acos[show_cols].copy()
+            disp.columns = [c.replace("_", " ").replace("%", "%").title() for c in disp.columns]
+            st.dataframe(disp.style.background_gradient(subset=["Acos %"] if "Acos %" in disp.columns else [], cmap="Reds"),
+                         use_container_width=True, height=320)
+            if "asin" in worst_acos.columns and "acos_%" in worst_acos.columns:
+                fig_wa = go.Figure(go.Bar(
+                    x=worst_acos["asin"], y=worst_acos["acos_%"],
+                    marker_color="#dc2626",
+                    text=[f"{v:.0f}%" for v in worst_acos["acos_%"]], textposition="outside",
+                ))
+                fig_wa.add_hline(y=35, line_dash="dash", line_color="#f59e0b",
+                                 annotation_text="35% danger line")
+                fig_wa.update_layout(title="ACOS % by ASIN", height=280,
+                                     margin=dict(t=40, b=60), xaxis_tickangle=-35)
+                st.plotly_chart(fig_wa, use_container_width=True)
+
+    # ── 4. Category rollup bubble chart ──────────────────────────────────
+    cat_df = prod_intel.get("by_category", pd.DataFrame())
+    if not cat_df.empty and "category" in cat_df.columns:
+        st.markdown('<div class="section-header">🗂️ Category Performance — Spend · Sales · ACOS</div>', unsafe_allow_html=True)
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            show = [c for c in ["category","spend","ad_sales","acos_%","roas","ad_orders"] if c in cat_df.columns]
+            d = cat_df[show].copy()
+            d.columns = [c.replace("_"," ").title() for c in d.columns]
+            st.dataframe(d, use_container_width=True, height=260)
+        with cc2:
+            if all(c in cat_df.columns for c in ["category","spend","ad_sales"]):
+                fig_cat = go.Figure()
+                fig_cat.add_trace(go.Bar(x=cat_df["category"], y=cat_df["ad_sales"],
+                                         name="Ad Sales", marker_color="#f97316"))
+                fig_cat.add_trace(go.Bar(x=cat_df["category"], y=cat_df["spend"],
+                                         name="Spend", marker_color="#4f46e5"))
+                if "acos_%" in cat_df.columns:
+                    fig_cat.add_trace(go.Scatter(x=cat_df["category"], y=cat_df["acos_%"],
+                                                  mode="markers+text", name="ACOS %",
+                                                  marker=dict(size=14, color="#dc2626", symbol="diamond"),
+                                                  text=[f"{v:.0f}%" for v in cat_df["acos_%"]],
+                                                  textposition="top center", yaxis="y2"))
+                fig_cat.update_layout(
+                    barmode="group", height=300, margin=dict(t=40, b=80),
+                    xaxis_tickangle=-30,
+                    yaxis=dict(title="Amount ($)"),
+                    yaxis2=dict(title="ACOS (%)", overlaying="y", side="right", showgrid=False),
+                    legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+                )
                 st.plotly_chart(fig_cat, use_container_width=True)
 
-    # Bid strategy
+    # ── 5. Bid strategy heatmap ───────────────────────────────────────────
     if not bid_df.empty:
         st.markdown('<div class="section-header">⚙️ Bid Strategy Performance</div>', unsafe_allow_html=True)
-        cols = [c for c in ["bid_strategy", "spend", "ad_sales", "acos_%", "roas", "impressions"] if c in bid_df.columns]
-        disp = bid_df[cols].copy()
-        disp.columns = [c.replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True)
+        bs1, bs2 = st.columns(2)
+        with bs1:
+            show = [c for c in ["bid_strategy","spend","ad_sales","acos_%","roas","impressions"] if c in bid_df.columns]
+            d = bid_df[show].copy()
+            d.columns = [c.replace("_"," ").title() for c in d.columns]
+            st.dataframe(d, use_container_width=True)
+        with bs2:
+            if all(c in bid_df.columns for c in ["bid_strategy","acos_%","roas"]):
+                fig_bs = go.Figure()
+                fig_bs.add_trace(go.Bar(x=bid_df["bid_strategy"], y=bid_df["acos_%"],
+                                        name="ACOS %", marker_color="#f97316"))
+                fig_bs.add_trace(go.Scatter(x=bid_df["bid_strategy"], y=bid_df["roas"],
+                                             mode="markers+lines", name="ROAS",
+                                             marker=dict(size=12, color="#4f46e5"),
+                                             line=dict(color="#4f46e5"), yaxis="y2"))
+                fig_bs.update_layout(
+                    title="ACOS & ROAS by Bid Strategy",
+                    yaxis=dict(title="ACOS (%)"),
+                    yaxis2=dict(title="ROAS", overlaying="y", side="right", showgrid=False),
+                    height=300, margin=dict(t=40, b=50),
+                    legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+                )
+                st.plotly_chart(fig_bs, use_container_width=True)
+
+    # ── 6. Match type efficiency ──────────────────────────────────────────
+    if match_df is not None and not match_df.empty:
+        st.markdown('<div class="section-header">🎯 Match Type Efficiency</div>', unsafe_allow_html=True)
+        mt1, mt2 = st.columns(2)
+        with mt1:
+            show = [c for c in ["match_type","spend","ad_sales","acos_%","roas","cvr_%","cpc"] if c in match_df.columns]
+            d = match_df[show].copy()
+            d.columns = [c.replace("_"," ").title() for c in d.columns]
+            st.dataframe(d, use_container_width=True)
+        with mt2:
+            if all(c in match_df.columns for c in ["match_type","acos_%","roas"]):
+                fig_mt = go.Figure()
+                fig_mt.add_trace(go.Bar(x=match_df["match_type"], y=match_df["acos_%"],
+                                        name="ACOS %", marker_color="#f97316"))
+                fig_mt.add_trace(go.Scatter(x=match_df["match_type"], y=match_df["roas"],
+                                             mode="markers+lines", name="ROAS",
+                                             marker=dict(size=12, color="#4f46e5"),
+                                             line=dict(color="#4f46e5"), yaxis="y2"))
+                fig_mt.update_layout(
+                    title="ACOS & ROAS by Match Type",
+                    yaxis=dict(title="ACOS (%)"),
+                    yaxis2=dict(title="ROAS", overlaying="y", side="right", showgrid=False),
+                    height=300, margin=dict(t=40, b=30),
+                    legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+                )
+                st.plotly_chart(fig_mt, use_container_width=True)
+        st.markdown("""<div class="reco-card">
+            <strong>Match Type Playbook:</strong> Exact match drives the most efficient spend
+            (lowest ACOS, highest CVR). Broad match is for discovery — harvest converting terms
+            weekly into exact/phrase. Pause broad match terms with &gt;10 clicks and zero orders.
+        </div>""", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
-# Tab — Trend Analysis
+# Tab — Trend Analysis (super-refined)
 # ---------------------------------------------------------------------------
 
 def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
@@ -1513,118 +1682,171 @@ def render_trend_tab(trend_df, t_summary: dict, prod_trend_df):
         st.info("No date/time data found. Trend analysis requires a 'Date range' column in your report.")
         return
 
-    # MoM summary banners
+    # ── 1. MoM delta KPI cards ────────────────────────────────────────────
     if t_summary:
-        st.markdown('<div class="section-header">📊 Period-over-Period Changes</div>', unsafe_allow_html=True)
-        cols = st.columns(4)
-        def delta_str(val):
-            if val is None:
-                return None
+        st.markdown('<div class="section-header">📊 Latest Period-over-Period Changes</div>', unsafe_allow_html=True)
+        mcols = st.columns(4)
+        def _delta(val, invert=False):
+            if val is None: return "N/A", "#6b7280"
+            good = val < 0 if invert else val > 0
             arrow = "▲" if val > 0 else "▼"
-            return f"{arrow} {abs(val):.1f}% vs prior period"
+            color = "#10b981" if good else "#dc2626"
+            return f"{arrow} {abs(val):.1f}%", color
 
-        with cols[0]:
-            st.markdown(metric_card("Spend Change", delta_str(t_summary.get("spend_change_pct")) or "N/A",
-                                     t_summary.get("latest_period")), unsafe_allow_html=True)
-        with cols[1]:
-            st.markdown(metric_card("Sales Change", delta_str(t_summary.get("sales_change_pct")) or "N/A",
-                                     t_summary.get("latest_period")), unsafe_allow_html=True)
-        with cols[2]:
-            st.markdown(metric_card("ACOS Change", delta_str(t_summary.get("acos_change_pct")) or "N/A",
-                                     "Lower is better"), unsafe_allow_html=True)
-        with cols[3]:
-            st.markdown(metric_card("ROAS Change", delta_str(t_summary.get("roas_change_pct")) or "N/A",
-                                     "Higher is better"), unsafe_allow_html=True)
+        items = [
+            ("💸 Spend Change",  t_summary.get("spend_change_pct"),  False),
+            ("📈 Sales Change",  t_summary.get("sales_change_pct"),  False),
+            ("🎯 ACOS Change",   t_summary.get("acos_change_pct"),   True),
+            ("⚡ ROAS Change",   t_summary.get("roas_change_pct"),   False),
+        ]
+        for col, (label, val, invert) in zip(mcols, items):
+            txt, color = _delta(val, invert)
+            with col:
+                period = t_summary.get("latest_period", "")
+                st.markdown(f"""
+                <div style="background:#ffffff;border-radius:10px;padding:14px;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.06);text-align:center;">
+                    <div style="font-size:12px;color:#6b7280;font-weight:600;">{label}</div>
+                    <div style="font-size:26px;font-weight:900;color:{color};">{txt}</div>
+                    <div style="font-size:11px;color:#9ca3af;">vs prior · {period}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-    # Spend vs Sales trend
-    st.markdown('<div class="section-header">📈 Monthly Spend vs Sales Trend</div>', unsafe_allow_html=True)
+    # ── 2. Spend vs Sales annotated line chart ────────────────────────────
+    st.markdown('<div class="section-header">📈 Monthly Spend vs Ad Sales</div>', unsafe_allow_html=True)
     if "_period_dt" in trend_df.columns:
         fig = go.Figure()
         if "spend" in trend_df.columns:
-            fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["spend"],
-                                      mode="lines+markers", name="Ad Spend",
-                                      line=dict(color="#f97316", width=2), marker=dict(size=7)))
+            fig.add_trace(go.Scatter(
+                x=trend_df["_period_dt"], y=trend_df["spend"],
+                mode="lines+markers", name="Ad Spend",
+                line=dict(color="#f97316", width=2.5), marker=dict(size=8),
+                fill="tozeroy", fillcolor="rgba(249,115,22,0.07)",
+            ))
         if "ad_sales" in trend_df.columns:
-            fig.add_trace(go.Scatter(x=trend_df["_period_dt"], y=trend_df["ad_sales"],
-                                      mode="lines+markers", name="Ad Sales",
-                                      line=dict(color="#4f46e5", width=2), marker=dict(size=7)))
-        fig.update_layout(title="Monthly Spend vs Ad Sales", height=380,
-                          xaxis_title="Month", yaxis_title="Amount ($)",
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                          margin=dict(t=60, b=40))
+            fig.add_trace(go.Scatter(
+                x=trend_df["_period_dt"], y=trend_df["ad_sales"],
+                mode="lines+markers", name="Ad Sales",
+                line=dict(color="#4f46e5", width=2.5), marker=dict(size=8),
+                fill="tozeroy", fillcolor="rgba(79,70,229,0.07)",
+            ))
+        # Annotate peak sales month
+        if "ad_sales" in trend_df.columns and not trend_df.empty:
+            peak = trend_df.loc[trend_df["ad_sales"].idxmax()]
+            fig.add_annotation(x=peak["_period_dt"], y=peak["ad_sales"],
+                                text=f"Peak {fmt_currency(peak['ad_sales'])}", showarrow=True,
+                                arrowhead=2, font=dict(color="#4f46e5", size=12),
+                                bgcolor="rgba(79,70,229,0.1)", bordercolor="#4f46e5")
+        fig.update_layout(
+            height=400, xaxis_title="Month", yaxis_title="Amount ($)",
+            legend=dict(orientation="h", y=1.06, x=0.5, xanchor="center"),
+            margin=dict(t=60, b=40), hovermode="x unified",
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ACOS trend
-    c1, c2 = st.columns(2)
-    with c1:
-        if "acos_%" in trend_df.columns:
-            fig_acos = go.Figure(go.Scatter(
+    # ── 3. ACOS & ROAS with benchmarks ───────────────────────────────────
+    r1, r2 = st.columns(2)
+    with r1:
+        if "acos_%" in trend_df.columns and "_period_dt" in trend_df.columns:
+            fig_a = go.Figure()
+            fig_a.add_trace(go.Scatter(
                 x=trend_df["_period_dt"], y=trend_df["acos_%"],
                 mode="lines+markers", fill="tozeroy",
-                line=dict(color="#f97316", width=2), marker=dict(size=6),
-                fillcolor="rgba(204,34,0,0.08)",
+                line=dict(color="#f97316", width=2), marker=dict(size=7),
+                fillcolor="rgba(249,115,22,0.08)", name="ACOS %",
             ))
-            fig_acos.add_hline(y=25, line_dash="dash", line_color="gray", annotation_text="25% benchmark")
-            fig_acos.update_layout(title="ACOS Trend (%)", height=320,
-                                    xaxis_title="Month", yaxis_title="ACOS (%)",
-                                    margin=dict(t=50, b=40))
-            st.plotly_chart(fig_acos, use_container_width=True)
-    with c2:
-        if "roas" in trend_df.columns:
-            fig_roas = go.Figure(go.Scatter(
+            fig_a.add_hrect(y0=0, y1=15, fillcolor="rgba(16,185,129,0.08)", line_width=0)
+            fig_a.add_hrect(y0=15, y1=35, fillcolor="rgba(245,158,11,0.07)", line_width=0)
+            fig_a.add_hrect(y0=35, y1=100, fillcolor="rgba(220,38,38,0.07)", line_width=0)
+            fig_a.add_hline(y=25, line_dash="dash", line_color="#6b7280",
+                             annotation_text="25% benchmark", annotation_font_size=11)
+            fig_a.update_layout(title="ACOS Trend (%)", height=320,
+                                 xaxis_title="Month", yaxis_title="ACOS (%)",
+                                 margin=dict(t=50, b=40))
+            st.plotly_chart(fig_a, use_container_width=True)
+    with r2:
+        if "roas" in trend_df.columns and "_period_dt" in trend_df.columns:
+            fig_r = go.Figure()
+            fig_r.add_trace(go.Scatter(
                 x=trend_df["_period_dt"], y=trend_df["roas"],
                 mode="lines+markers", fill="tozeroy",
-                line=dict(color="#4f46e5", width=2), marker=dict(size=6),
-                fillcolor="rgba(26,10,20,0.08)",
+                line=dict(color="#4f46e5", width=2), marker=dict(size=7),
+                fillcolor="rgba(79,70,229,0.08)", name="ROAS",
             ))
-            fig_roas.add_hline(y=4, line_dash="dash", line_color="green", annotation_text="4x target")
-            fig_roas.update_layout(title="ROAS Trend", height=320,
-                                    xaxis_title="Month", yaxis_title="ROAS",
-                                    margin=dict(t=50, b=40))
-            st.plotly_chart(fig_roas, use_container_width=True)
+            fig_r.add_hline(y=4, line_dash="dash", line_color="#10b981",
+                             annotation_text="4x target", annotation_font_size=11)
+            fig_r.add_hline(y=2, line_dash="dot", line_color="#dc2626",
+                             annotation_text="2x minimum", annotation_font_size=11)
+            fig_r.update_layout(title="ROAS Trend", height=320,
+                                 xaxis_title="Month", yaxis_title="ROAS",
+                                 margin=dict(t=50, b=40))
+            st.plotly_chart(fig_r, use_container_width=True)
 
-    # CPC & CTR trends
-    c3, c4 = st.columns(2)
-    with c3:
-        if "cpc" in trend_df.columns:
-            fig_cpc = go.Figure(go.Bar(
+    # ── 4. CPC trend + CTR trend ──────────────────────────────────────────
+    r3, r4 = st.columns(2)
+    with r3:
+        if "cpc" in trend_df.columns and "_period_dt" in trend_df.columns:
+            fig_cpc = go.Figure()
+            fig_cpc.add_trace(go.Scatter(
                 x=trend_df["_period_dt"], y=trend_df["cpc"],
-                marker_color="#f97316", name="CPC",
+                mode="lines+markers", name="CPC",
+                line=dict(color="#f97316", width=2), marker=dict(size=7),
+                fill="tozeroy", fillcolor="rgba(249,115,22,0.07)",
             ))
-            fig_cpc.update_layout(title="CPC Trend ($)", height=300, margin=dict(t=50, b=40))
+            fig_cpc.update_layout(title="CPC Trend ($)", height=300,
+                                   xaxis_title="Month", yaxis_title="CPC ($)",
+                                   margin=dict(t=50, b=40))
             st.plotly_chart(fig_cpc, use_container_width=True)
-    with c4:
-        if "impressions" in trend_df.columns:
+    with r4:
+        if "ctr_%" in trend_df.columns and "_period_dt" in trend_df.columns:
+            fig_ctr = go.Figure()
+            fig_ctr.add_trace(go.Scatter(
+                x=trend_df["_period_dt"], y=trend_df["ctr_%"],
+                mode="lines+markers", name="CTR %",
+                line=dict(color="#10b981", width=2), marker=dict(size=7),
+                fill="tozeroy", fillcolor="rgba(16,185,129,0.07)",
+            ))
+            fig_ctr.add_hline(y=0.3, line_dash="dash", line_color="#6b7280",
+                               annotation_text="0.3% baseline")
+            fig_ctr.update_layout(title="CTR Trend (%)", height=300,
+                                   xaxis_title="Month", yaxis_title="CTR (%)",
+                                   margin=dict(t=50, b=40))
+            st.plotly_chart(fig_ctr, use_container_width=True)
+        elif "impressions" in trend_df.columns and "_period_dt" in trend_df.columns:
             fig_imp = go.Figure(go.Bar(
                 x=trend_df["_period_dt"], y=trend_df["impressions"],
                 marker_color="#4f46e5", name="Impressions",
             ))
-            fig_imp.update_layout(title="Monthly Impressions", height=300, margin=dict(t=50, b=40))
+            fig_imp.update_layout(title="Monthly Impressions", height=300,
+                                   margin=dict(t=50, b=40))
             st.plotly_chart(fig_imp, use_container_width=True)
 
-    # Ad product spend trend
+    # ── 5. Stacked spend by ad product ───────────────────────────────────
     if not prod_trend_df.empty and "campaign_type" in prod_trend_df.columns:
-        st.markdown('<div class="section-header">📊 Monthly Spend by Ad Product (SP / SB / SD)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">📊 Monthly Spend by Ad Type (SP · SB · SD)</div>', unsafe_allow_html=True)
+        colors = {"Sponsored Products": "#4f46e5", "Sponsored Brands": "#f97316", "Sponsored Display": "#10b981"}
         fig_pt = go.Figure()
-        colors = ["#1a0a14", "#cc2200", "#798da0"]
-        for i, prod in enumerate(prod_trend_df["campaign_type"].unique()):
+        for prod in prod_trend_df["campaign_type"].unique():
             sub = prod_trend_df[prod_trend_df["campaign_type"] == prod]
             fig_pt.add_trace(go.Bar(
                 x=sub["_period_dt"], y=sub["spend"],
-                name=str(prod), marker_color=colors[i % len(colors)],
+                name=str(prod),
+                marker_color=colors.get(str(prod), "#6b7280"),
             ))
-        fig_pt.update_layout(barmode="stack", title="Spend by Ad Product Over Time",
-                              height=360, xaxis_title="Month", yaxis_title="Spend ($)",
-                              legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                              margin=dict(t=60, b=40))
+        fig_pt.update_layout(
+            barmode="stack", height=360, xaxis_title="Month", yaxis_title="Spend ($)",
+            legend=dict(orientation="h", y=1.06, x=0.5, xanchor="center"),
+            margin=dict(t=60, b=40),
+        )
         st.plotly_chart(fig_pt, use_container_width=True)
 
-    # Raw trend table
-    with st.expander("📋 View Raw Monthly Data"):
-        cols = [c for c in ["_period_dt", "spend", "ad_sales", "acos_%", "roas", "impressions", "clicks", "cpc"] if c in trend_df.columns]
-        disp = trend_df[cols].copy()
-        disp.columns = [c.replace("_period_dt", "Month").replace("_", " ").replace("%", "Pct").title() for c in disp.columns]
-        st.dataframe(disp, use_container_width=True)
+    # ── 6. Raw monthly data table ─────────────────────────────────────────
+    with st.expander("📋 View Raw Monthly Data Table"):
+        show = [c for c in ["_period_dt","spend","ad_sales","acos_%","roas","impressions","clicks","cpc","ctr_%"] if c in trend_df.columns]
+        d = trend_df[show].copy()
+        d.columns = [c.replace("_period_dt","Month").replace("_"," ").title() for c in d.columns]
+        # Format money columns
+        st.dataframe(d, use_container_width=True, height=380)
 
 
 # ---------------------------------------------------------------------------
@@ -1668,8 +1890,8 @@ def main():
             <div class="welcome-step">
                 <div class="step-icon">3</div>
                 <div class="step-text">
-                    <strong>Get 6 insight tabs instantly</strong>
-                    <span>Key Metrics &nbsp;·&nbsp; Search Term Intelligence &nbsp;·&nbsp; Product Intelligence &nbsp;·&nbsp; Trend Analysis &nbsp;·&nbsp; Forecast &nbsp;·&nbsp; Recommendations</span>
+                    <strong>Get 5 insight tabs instantly</strong>
+                    <span>Key Metrics &nbsp;·&nbsp; Product Intelligence &nbsp;·&nbsp; Trend Analysis &nbsp;·&nbsp; Forecast &amp; Media Plan &nbsp;·&nbsp; Recommendations</span>
                 </div>
             </div>
             <div class="welcome-step">
@@ -1780,9 +2002,8 @@ def main():
     prod_trend_df  = bd["prod_trend_df"]
 
     # ---- Tabs ---------------------------------------------------------------
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Key Metrics",
-        "🔎 Search Term Intelligence",
         "📦 Product Intelligence",
         "📅 Trend Analysis",
         "📈 Forecast & Media Plan",
@@ -1793,23 +2014,20 @@ def main():
         render_metrics_dashboard(ads_metrics, vendor_metrics)
 
     with tab2:
-        render_search_term_tab(st_insights, wasted, match_df)
+        render_product_tab(prod_intel, ad_prod_df, bid_df, match_df)
 
     with tab3:
-        render_product_tab(prod_intel, ad_prod_df, bid_df)
-
-    with tab4:
         render_trend_tab(trend_df, t_summary, prod_trend_df)
 
     scenarios = []
-    with tab5:
+    with tab4:
         if ads_df is not None or vendor_df is not None:
             scenarios = render_forecast(
                 ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split,
                 trend_df=trend_df, custom_targets=custom_targets,
             )
 
-    with tab6:
+    with tab5:
         render_recommendations(ads_metrics, vendor_metrics, scenarios)
 
     # ---- Download button ---------------------------------------------------
