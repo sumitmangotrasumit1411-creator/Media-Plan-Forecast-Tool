@@ -142,19 +142,41 @@ def _normalise_columns(df: pd.DataFrame, alias_map: dict) -> pd.DataFrame:
     return df
 
 
+# Columns that must never be coerced to numeric even if they contain $ / % / ,
+_TEXT_COLUMNS = {
+    "date_range", "start_date", "end_date", "report_date", "week_date",
+    "month_date", "campaign_name", "ad_group_name", "search_term",
+    "targeting", "matched_target", "product_title", "brand", "category",
+    "subcategory", "account_name", "portfolio_name", "bid_strategy",
+    "match_type", "target_type", "target_status", "campaign_type",
+    "sku", "asin", "account_id", "campaign_id",
+}
+
+
 def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
-    """Strip currency symbols / percent signs and coerce to float."""
+    """
+    Strip currency symbols / percent signs and coerce to float.
+    Skips known text/date columns that may contain commas but are not numeric
+    (e.g. 'Mar 14, 2025 - Jun 18, 2025' would otherwise be silently NaN'd).
+    """
     for col in df.columns:
+        # Never touch known text / date columns
+        if col in _TEXT_COLUMNS:
+            continue
         if df[col].dtype == object:
             sample = df[col].dropna().astype(str)
             if sample.str.contains(r"[\$\%\,]", regex=True).any():
-                df[col] = (
+                cleaned = (
                     df[col]
                     .astype(str)
                     .str.replace(r"[\$\%\,]", "", regex=True)
                     .str.strip()
                 )
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+                numeric = pd.to_numeric(cleaned, errors="coerce")
+                # Only replace if the coercion actually worked for most values
+                # (guards against accidentally nuking a text column)
+                if numeric.notna().sum() >= df[col].notna().sum() * 0.5:
+                    df[col] = numeric
     return df
 
 
