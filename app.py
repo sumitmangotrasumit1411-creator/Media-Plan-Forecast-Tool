@@ -1242,7 +1242,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         sel_annual_sales = active_sales
         selected_label   = f"+{sel_growth_pct}%"
 
-    monthly_df, actuals_year_from_forecast = monthly_forecast(
+    _mf_result = monthly_forecast(
         trend_df=trend_df,
         growth_pct=sel_growth_pct,
         total_ordered_revenue=baseline_revenue,
@@ -1250,6 +1250,11 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         annual_spend_override=sel_annual_spend,
         annual_sales_override=sel_annual_sales,
     )
+    # monthly_forecast returns (DataFrame, int) — guard against stale cache returning bare df
+    if isinstance(_mf_result, tuple):
+        monthly_df, actuals_year_from_forecast = _mf_result
+    else:
+        monthly_df, actuals_year_from_forecast = _mf_result, 0
 
     # ---- Event legend strip
     event_months = monthly_df[monthly_df["Is Event Month"] == True]
