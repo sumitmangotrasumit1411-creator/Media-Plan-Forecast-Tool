@@ -863,44 +863,66 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         for ch, w in channel_split.items()
     }
 
-    def _delta_html(new_val, old_val, fmt_fn, higher_is_better=True, is_pct_metric=False):
-        """Return coloured delta HTML string."""
+    def _delta_badge(new_val, old_val, higher_is_better=True, is_pct_metric=False):
+        """Return a self-contained badge pill with arrow + % change, always inside tile."""
         if old_val is None or old_val == 0:
-            return ""
+            return '<span style="font-size:11px;color:#9ca3af;">no change</span>'
         delta = new_val - old_val
         pct   = delta / abs(old_val) * 100
         good  = (delta > 0) == higher_is_better
-        color = "#10b981" if good else "#dc2626"
+        bg    = "#dcfce7" if good else "#fee2e2"
+        color = "#15803d" if good else "#b91c1c"
         arrow = "▲" if delta > 0 else "▼"
         sign  = "+" if delta > 0 else ""
         if is_pct_metric:
-            return f'<span style="color:{color};font-size:12px;">{arrow} {sign}{delta:.2f}pp</span>'
-        return f'<span style="color:{color};font-size:12px;">{arrow} {sign}{pct:.1f}%</span>'
+            change_str = f"{sign}{delta:.2f}pp"
+        else:
+            change_str = f"{sign}{pct:.1f}%"
+        return (
+            f'<span style="background:{bg};color:{color};border-radius:20px;'
+            f'padding:3px 9px;font-size:12px;font-weight:800;white-space:nowrap;">'
+            f'{arrow} {change_str}</span>'
+        )
 
-    def _metric_tile(label, curr, proj, fmt_fn, higher_is_better=True, is_pct_metric=False, unit=""):
-        delta_html = _delta_html(proj, curr, fmt_fn, higher_is_better, is_pct_metric)
-        changed = abs(proj - (curr or 0)) > 0.001 if curr else False
-        border = "#4f46e5" if changed else "#e5e7eb"
+    def _metric_tile(label, curr, proj, fmt_fn, higher_is_better=True, is_pct_metric=False):
+        badge      = _delta_badge(proj, curr, higher_is_better, is_pct_metric)
+        changed    = abs(proj - (curr or 0)) > 0.001 if curr else False
+        border     = "#4f46e5" if changed else "#e5e7eb"
+        border_top = f"4px solid #4f46e5" if changed else "4px solid #e5e7eb"
         return f"""
-        <div style="background:#ffffff;border:2px solid {border};border-radius:10px;
-                    padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
-            <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.5px;margin-bottom:4px;">{label}</div>
-            <div style="display:flex;align-items:baseline;gap:10px;">
+        <div style="background:#ffffff;border:1px solid {border};border-top:{border_top};
+                    border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,0.05);
+                    height:100%;">
+            <div style="font-size:12px;font-weight:700;color:#6b7280;letter-spacing:.4px;
+                        margin-bottom:10px;">{label}</div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;
+                        margin-bottom:8px;">
                 <div>
-                    <div style="font-size:11px;color:#9ca3af;">Current</div>
-                    <div style="font-size:16px;font-weight:700;color:#374151;">{fmt_fn(curr)}</div>
+                    <div style="font-size:10px;color:#9ca3af;font-weight:600;
+                                text-transform:uppercase;letter-spacing:.5px;">Current</div>
+                    <div style="font-size:15px;font-weight:700;color:#6b7280;">{fmt_fn(curr)}</div>
                 </div>
-                <div style="font-size:18px;color:#9ca3af;">→</div>
-                <div>
-                    <div style="font-size:11px;color:#4f46e5;font-weight:700;">Projected</div>
-                    <div style="font-size:20px;font-weight:900;color:#1e1b4b;">{fmt_fn(proj)}{unit}</div>
+                <div style="font-size:16px;color:#9ca3af;margin-bottom:2px;">→</div>
+                <div style="text-align:right;">
+                    <div style="font-size:10px;color:#4f46e5;font-weight:700;
+                                text-transform:uppercase;letter-spacing:.5px;">Projected</div>
+                    <div style="font-size:20px;font-weight:900;color:#1e1b4b;">{fmt_fn(proj)}</div>
                 </div>
-                <div style="margin-left:auto;">{delta_html}</div>
+            </div>
+            <div style="border-top:1px solid #f3f4f6;padding-top:7px;text-align:center;">
+                {badge}
             </div>
         </div>"""
 
     st.markdown('<div class="section-header">⚡ Live Impact Dashboard — All Metrics Updated</div>', unsafe_allow_html=True)
-    st.caption("Every metric below updates instantly when you change Custom Targets or Channel Budget Split in the sidebar.")
+    st.markdown("""
+    <div style="background:linear-gradient(90deg,#4f46e5 0%,#6366f1 100%);
+                border-radius:8px;padding:11px 18px;margin-bottom:16px;">
+        <span style="color:#ffffff;font-size:14px;font-weight:800;letter-spacing:.2px;">
+        ⚡ Every metric below updates instantly when you change Custom Targets or Channel Budget Split in the sidebar.
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
     r1 = st.columns(4)
     r1[0].markdown(_metric_tile("💰 Ad Spend",        total_ad_spend, active_spend,  fmt_currency, True),  unsafe_allow_html=True)
