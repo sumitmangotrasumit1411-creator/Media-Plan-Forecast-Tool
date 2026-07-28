@@ -234,7 +234,7 @@ def monthly_forecast(
     custom_channel_split: Optional[dict] = None,
     annual_spend_override: Optional[float] = None,
     annual_sales_override: Optional[float] = None,
-) -> pd.DataFrame:
+):
     """
     Build a month-by-month media plan for a given growth scenario.
 
@@ -244,17 +244,32 @@ def monthly_forecast(
 
     annual_spend_override / annual_sales_override: pass the custom
     scenario's annual spend/sales to override the growth-% projection.
+
+    Returns
+    -------
+    (DataFrame, int)  — monthly plan DataFrame + the actuals_year used (0 = none).
     """
     channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
     growth_factor = 1 + growth_pct / 100
 
     # ── Build monthly actuals from trend_df ──────────────────────────────
+    # Strategy: if trend_df contains multi-year data (e.g. 2024 + 2025),
+    # use the PRIOR year (max_year - 1) as "last year actuals" so the
+    # forecast table shows 2024 actual vs 2025 projected.
+    # If only one year is present, use it directly.
+    actuals_year: int = 0
     if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
         work = trend_df.copy()
         work["_month"] = pd.to_datetime(work["_period_dt"]).dt.month
         work["_year"]  = pd.to_datetime(work["_period_dt"]).dt.year
-        latest_year = int(work["_year"].max())
-        monthly = work[work["_year"] == latest_year].copy()
+        max_year  = int(work["_year"].max())
+        min_year  = int(work["_year"].min())
+        # Prefer prior year as actuals baseline when multi-year data available
+        if max_year > min_year:
+            actuals_year = max_year - 1
+        else:
+            actuals_year = max_year
+        monthly = work[work["_year"] == actuals_year].copy()
         monthly = monthly.sort_values("_month").reset_index(drop=True)
     else:
         monthly = pd.DataFrame()
@@ -342,7 +357,7 @@ def monthly_forecast(
             "SD Budget ($)":          ch_alloc.get("Sponsored Display", 0),
         })
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), actuals_year
 
 
 # ---------------------------------------------------------------------------

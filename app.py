@@ -1242,7 +1242,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         sel_annual_sales = active_sales
         selected_label   = f"+{sel_growth_pct}%"
 
-    monthly_df = monthly_forecast(
+    monthly_df, actuals_year_from_forecast = monthly_forecast(
         trend_df=trend_df,
         growth_pct=sel_growth_pct,
         total_ordered_revenue=baseline_revenue,
@@ -1358,13 +1358,8 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         st.plotly_chart(fig_acos_m, use_container_width=True)
 
     # ---- Full monthly plan table
-    # Detect which year actuals come from (for column labelling)
-    actual_year = None
-    if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
-        try:
-            actual_year = int(pd.to_datetime(trend_df["_period_dt"]).dt.year.max())
-        except Exception:
-            pass
+    # Use actuals_year returned by monthly_forecast (prior year when multi-year data available)
+    actual_year = actuals_year_from_forecast if actuals_year_from_forecast else None
     actual_label = f"{actual_year} Actuals" if actual_year else "Actuals"
 
     st.markdown(
