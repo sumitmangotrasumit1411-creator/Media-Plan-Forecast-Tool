@@ -865,10 +865,23 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
 
     def _delta_badge(new_val, old_val, higher_is_better=True, is_pct_metric=False):
         """Return a self-contained badge pill with arrow + % change, always inside tile."""
-        if old_val is None or old_val == 0:
-            return '<span style="font-size:11px;color:#9ca3af;">no change</span>'
+        # Neutral badge for genuinely unchanged metrics (CPC, CTR, CVR held constant)
+        NEUTRAL = '<span style="background:#f3f4f6;color:#6b7280;border-radius:20px;padding:3px 9px;font-size:12px;font-weight:700;">— Unchanged</span>'
+
+        if old_val is None:
+            return NEUTRAL
+        new_val = new_val or 0
+        old_val = old_val or 0
         delta = new_val - old_val
-        pct   = delta / abs(old_val) * 100
+        # Treat sub-0.01% as unchanged to avoid floating-point noise
+        if old_val != 0:
+            pct = delta / abs(old_val) * 100
+        else:
+            pct = 0.0
+        if abs(pct) < 0.01 and not is_pct_metric:
+            return NEUTRAL
+        if is_pct_metric and abs(delta) < 0.001:
+            return NEUTRAL
         good  = (delta > 0) == higher_is_better
         bg    = "#dcfce7" if good else "#fee2e2"
         color = "#15803d" if good else "#b91c1c"
@@ -930,14 +943,17 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
     r1[2].markdown(_metric_tile("🏪 Total Revenue",   baseline_revenue, active_rev,  fmt_currency, True),  unsafe_allow_html=True)
     r1[3].markdown(_metric_tile("💹 Revenue Gap",     0, active_rev - baseline_revenue, fmt_currency, True), unsafe_allow_html=True)
 
+    # Current TACOS = current spend / baseline_revenue (vendor or ad sales proxy)
+    curr_tacos = round(total_ad_spend / baseline_revenue * 100, 2) if baseline_revenue > 0 else None
+    # Projected cost per order
+    proj_cost_per_order = round(active_spend / proj_orders, 2) if proj_orders > 0 else (ads_metrics.get("cost_per_order") or 0)
+
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     r2 = st.columns(4)
-    r2[0].markdown(_metric_tile("🎯 ACOS",     ads_metrics.get("overall_acos") or 0, active_acos, fmt_pct, False, True),  unsafe_allow_html=True)
-    r2[1].markdown(_metric_tile("⚡ ROAS",     ads_metrics.get("overall_roas") or 0, active_roas or 0, lambda v: f"{v:.2f}x", True, False), unsafe_allow_html=True)
-    r2[2].markdown(_metric_tile("📊 TACOS",    ads_metrics.get("overall_tacos") or 0 if ads_metrics.get("overall_tacos") else 0, active_tacos or 0, fmt_pct, False, True), unsafe_allow_html=True)
-    r2[3].markdown(_metric_tile("💵 Cost/Order", ads_metrics.get("cost_per_order") or 0,
-                                 round(active_spend / proj_orders, 2) if proj_orders > 0 else 0,
-                                 fmt_currency, False), unsafe_allow_html=True)
+    r2[0].markdown(_metric_tile("🎯 ACOS",       ads_metrics.get("overall_acos"),    active_acos,            fmt_pct,                   False, True),  unsafe_allow_html=True)
+    r2[1].markdown(_metric_tile("⚡ ROAS",        ads_metrics.get("overall_roas"),    active_roas,            lambda v: f"{v:.2f}x" if v else "—", True, False), unsafe_allow_html=True)
+    r2[2].markdown(_metric_tile("📊 TACOS",       curr_tacos,                         active_tacos,           fmt_pct,                   False, True),  unsafe_allow_html=True)
+    r2[3].markdown(_metric_tile("💵 Cost/Order",  ads_metrics.get("cost_per_order"),  proj_cost_per_order,    fmt_currency,              False, False), unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     r3 = st.columns(4)
