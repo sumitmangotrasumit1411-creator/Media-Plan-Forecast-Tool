@@ -232,18 +232,23 @@ def monthly_forecast(
     growth_pct: float,
     total_ordered_revenue: float,
     custom_channel_split: Optional[dict] = None,
+    annual_spend_override: Optional[float] = None,
+    annual_sales_override: Optional[float] = None,
 ) -> pd.DataFrame:
     """
     Build a month-by-month media plan for a given growth scenario.
 
-    Uses actual monthly trend data as the baseline. Returns a DataFrame with
-    one row per month containing actuals, projections, event labels, and
-    channel budget splits.
+    Uses actual monthly trend data as the baseline where available.
+    When actuals are missing, distributes annual totals using seasonal
+    event-multiplier weights so the table is never empty.
+
+    annual_spend_override / annual_sales_override: pass the custom
+    scenario's annual spend/sales to override the growth-% projection.
     """
     channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
     growth_factor = 1 + growth_pct / 100
 
-    # Build monthly actuals from trend_df
+    # ── Build monthly actuals from trend_df ──────────────────────────────
     if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
         work = trend_df.copy()
         work["_month"] = pd.to_datetime(work["_period_dt"]).dt.month
@@ -254,13 +259,32 @@ def monthly_forecast(
     else:
         monthly = pd.DataFrame()
 
+    # ── Seasonal weights — used to distribute annual totals when no actuals ──
+    # Each month's weight = event_multiplier / sum(all multipliers)
+    raw_weights = [EVENT_SPEND_MULTIPLIER.get(m, 1.0) for m in range(1, 13)]
+    total_weight = sum(raw_weights)
+    seasonal_weights = [w / total_weight for w in raw_weights]  # sums to 1.0
+
+    # Annual totals to distribute (used only when actuals are missing per month)
+    # If override provided (custom scenario), use it; else use growth-% estimate
+    if annual_spend_override and annual_spend_override > 0:
+        annual_proj_spend = annual_spend_override
+    else:
+        # Derive from total_ordered_revenue and default ACOS
+        annual_proj_spend = 0.0  # will fall back to seasonal distribution below
+
+    if annual_sales_override and annual_sales_override > 0:
+        annual_proj_sales = annual_sales_override
+    else:
+        annual_proj_sales = 0.0
+
     MONTH_NAMES = [
         "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     ]
 
     rows = []
-    for month_num in range(1, 13):
+    for idx, month_num in enumerate(range(1, 13)):
         actual_row = monthly[monthly["_month"] == month_num] if not monthly.empty else pd.DataFrame()
 
         actual_spend = float(actual_row["spend"].values[0])    if not actual_row.empty and "spend"    in actual_row.columns else None
@@ -275,13 +299,26 @@ def monthly_forecast(
         spend_multiplier = EVENT_SPEND_MULTIPLIER.get(month_num, 1.0)
         spend_uplift_pct = round((spend_multiplier - 1) * 100, 0)
 
-        base_spend = actual_spend if actual_spend is not None else 0.0
-        base_sales = actual_sales if actual_sales is not None else 0.0
+        # ── Projected spend ──────────────────────────────────────────────
+        if actual_spend is not None:
+            # Have actuals — scale by growth + event multiplier
+            proj_spend = round(actual_spend * growth_factor * spend_multiplier, 2)
+        elif annual_proj_spend > 0:
+            # No actuals but have annual total — distribute seasonally
+            proj_spend = round(annual_proj_spend * seasonal_weights[idx] * spend_multiplier, 2)
+        else:
+            proj_spend = 0.0
 
-        proj_spend = round(base_spend * growth_factor * spend_multiplier, 2)
-        proj_sales = round(base_sales * growth_factor, 2)
-        proj_acos  = round(proj_spend / proj_sales * 100, 2) if proj_sales > 0 else None
-        proj_roas  = round(proj_sales / proj_spend, 2)       if proj_spend > 0 else None
+        # ── Projected sales ──────────────────────────────────────────────
+        if actual_sales is not None:
+            proj_sales = round(actual_sales * growth_factor, 2)
+        elif annual_proj_sales > 0:
+            proj_sales = round(annual_proj_sales * seasonal_weights[idx], 2)
+        else:
+            proj_sales = 0.0
+
+        proj_acos = round(proj_spend / proj_sales * 100, 2) if proj_sales > 0 else None
+        proj_roas = round(proj_sales / proj_spend, 2)       if proj_spend > 0 else None
 
         ch_alloc = {ch: round(proj_spend * w, 2) for ch, w in channel_split.items()}
 

@@ -1173,23 +1173,44 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
     st.markdown('<div class="section-header">📅 Monthly Media Plan & High-Sales Events</div>', unsafe_allow_html=True)
 
     # Scenario selector for the monthly view
-    scenario_labels = [f"+{s['growth_pct']}%" for s in scenarios]
+    # Build options: Custom first (if active), then growth-% scenarios
+    scenario_labels = []
+    scenario_map    = {}  # label → scenario dict or None
+
+    if custom_scenario:
+        cs_label_monthly = f"🎯 Custom ({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)"
+        scenario_labels.append(cs_label_monthly)
+        scenario_map[cs_label_monthly] = custom_scenario
+
+    for s in scenarios:
+        lbl = f"+{s['growth_pct']}%"
+        scenario_labels.append(lbl)
+        scenario_map[lbl] = s
+
     if scenario_labels:
         selected_label = st.selectbox(
-            "Select Growth Scenario for Monthly Plan:",
+            "Select Scenario for Monthly Plan:",
             options=scenario_labels,
-            index=min(1, len(scenario_labels) - 1),  # default +10% if available
+            index=0,  # default to custom if active, else first growth scenario
             key="monthly_scenario_select",
         )
-        sel_growth_pct = float(selected_label.replace("+", "").replace("%", ""))
+        sel_scenario = scenario_map[selected_label]
+        sel_growth_pct    = sel_scenario["growth_pct"]
+        sel_annual_spend  = sel_scenario["recommended_spend"]
+        sel_annual_sales  = sel_scenario["target_ad_sales"]
     else:
-        sel_growth_pct = growth_options[0] if growth_options else 10
+        sel_growth_pct   = growth_options[0] if growth_options else 10
+        sel_annual_spend = active_spend
+        sel_annual_sales = active_sales
+        selected_label   = f"+{sel_growth_pct}%"
 
     monthly_df = monthly_forecast(
         trend_df=trend_df,
         growth_pct=sel_growth_pct,
         total_ordered_revenue=baseline_revenue,
         custom_channel_split=channel_split,
+        annual_spend_override=sel_annual_spend,
+        annual_sales_override=sel_annual_sales,
     )
 
     # ---- Event legend strip
@@ -1227,7 +1248,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
     ))
     fig_monthly.add_trace(go.Bar(
         x=months, y=proj_spend_vals,
-        name=f"Projected Spend ({selected_label if scenario_labels else '+' + str(int(sel_growth_pct)) + '%'})",
+        name=f"Projected Spend ({selected_label})",
         marker_color=bar_colors_proj,
         opacity=0.9,
     ))
@@ -1255,7 +1276,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(t=60, b=40),
         xaxis_title="Month",
-        title=f"Monthly Spend & Sales — {selected_label if scenario_labels else str(int(sel_growth_pct)) + '%'} Growth Scenario  |  🟠 = High-Sales Event Month",
+        title=f"Monthly Spend & Sales — {selected_label} Scenario  |  🟠 = High-Sales Event Month",
     )
     st.plotly_chart(fig_monthly, use_container_width=True)
 
