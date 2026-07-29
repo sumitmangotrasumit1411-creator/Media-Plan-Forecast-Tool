@@ -1,18 +1,60 @@
-# Data files — never commit actual reports
-*.csv
-*.xlsx
-*.xls
-
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
+*$py.class
+*.so
+.Python
 .venv/
 venv/
 env/
 
-# Streamlit
-.streamlit/secrets.toml
+# Secrets & env files
+.env
+.env.local
+.env.*.local
+secrets/
+
+# Temp / upload files
+tmp/
+/tmp/mediaplan/
+*.parquet
+*.arrow
+*.feather
+
+# Data files (do not commit report data)
+*.csv
+*.xlsx
+*.xls
+!requirements.txt
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/

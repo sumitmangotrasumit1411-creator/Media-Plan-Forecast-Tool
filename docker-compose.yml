@@ -1,0 +1,56 @@
+version: "3.9"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — Amazon Media Plan Forecast Engine
+#
+# Services:
+#   app      — Streamlit frontend (main application)
+#
+# Usage:
+#   docker compose up --build          # build and start
+#   docker compose up -d               # run in background
+#   docker compose logs -f app         # tail logs
+#   docker compose down                # stop and remove containers
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: media-plan-engine:latest
+    container_name: media-plan-engine
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-3072}
+      - CHUNK_ROWS=${CHUNK_ROWS:-300000}
+      - TMP_DIR=/tmp/mediaplan
+      - DUCKDB_THREADS=${DUCKDB_THREADS:-4}
+      - DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-4GB}
+      - ENABLE_AUTH=${ENABLE_AUTH:-false}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+    volumes:
+      # Persist temp files across container restarts (optional)
+      - tmp_data:/tmp/mediaplan
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 8G        # headroom for 3 GB files + processing overhead
+        reservations:
+          memory: 2G
+
+volumes:
+  tmp_data:
+    driver: local

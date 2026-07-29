@@ -1,5 +1,25 @@
 [server]
-maxUploadSize = 2048
+maxUploadSize    = 3072          # 3 GB
+enableCORS       = false
+enableXsrfProtection = true
+headless         = true          # required for Docker / cloud deployments
+port             = 8501
+address          = "0.0.0.0"
 
 [runner]
-fastReruns = true
+fastReruns       = true
+magicEnabled     = false         # disable magic commands for performance
+
+[browser]
+gatherUsageStats = false         # no telemetry
+
+[theme]
+base             = "light"
+primaryColor     = "#4f46e5"
+backgroundColor  = "#f0f2ff"
+secondaryBackgroundColor = "#ffffff"
+textColor        = "#1e1b4b"
+font             = "sans serif"
+
+[logger]
+level            = "warning"     # suppress info noise in production
