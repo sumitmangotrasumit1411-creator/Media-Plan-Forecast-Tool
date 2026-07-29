@@ -12,10 +12,18 @@ from utils.formatters import fmt_currency
 
 
 def render_trend_tab(trend_df: pd.DataFrame, t_summary: dict, prod_trend_df: pd.DataFrame) -> None:
-    """Render the Trend Analysis tab."""
+    """Render the Trend Analysis tab — Phase 2."""
     if trend_df.empty:
         st.info("No date/time data found. Trend analysis requires a 'Date range' column in your report.")
         return
+
+    st.markdown("""
+    <div class="callout-banner">
+        <strong>Trend Analysis</strong> shows how your ad performance has changed over time.
+        Use this to identify seasonal patterns, efficiency drift, and month-over-month momentum
+        before building your forecast.
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── 1. MoM delta KPI cards ────────────────────────────────────────────
     if t_summary:

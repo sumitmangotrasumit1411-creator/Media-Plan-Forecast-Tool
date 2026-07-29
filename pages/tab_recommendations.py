@@ -10,7 +10,15 @@ from utils.formatters import fmt_currency, fmt_pct
 
 
 def render_recommendations(ads_metrics: dict, vendor_metrics: dict, scenarios: list) -> None:
-    """Render the Strategic Recommendations tab."""
+    """Render the Strategic Recommendations tab — Phase 2."""
+
+    st.markdown("""
+    <div class="callout-banner">
+        <strong>Strategic Recommendations</strong> are generated directly from your data.
+        Each action card is driven by your actual ACOS, ROAS, CTR, and spend numbers — not generic advice.
+    </div>
+    """, unsafe_allow_html=True)
+
     acos  = ads_metrics.get("overall_acos")
     roas  = ads_metrics.get("overall_roas")
     ctr   = ads_metrics.get("overall_ctr")

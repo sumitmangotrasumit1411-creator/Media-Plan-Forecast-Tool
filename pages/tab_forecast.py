@@ -163,14 +163,31 @@ def render_forecast(
             </div>
         </div>"""
 
+    # ── Hero KPI summary banner ─────────────────────────────────────────────────
+    curr_acos  = ads_metrics.get("overall_acos")
+    curr_roas  = ads_metrics.get("overall_roas")
+    curr_tacos_hero = round(total_ad_spend / baseline_revenue * 100, 2) if baseline_revenue > 0 else None
+
+    hero_items = [
+        ("Current Revenue",  fmt_currency(baseline_revenue),  "Baseline"),
+        ("Current Ad Spend", fmt_currency(total_ad_spend),    "Total spend"),
+        ("ACOS",             fmt_pct(curr_acos),              "Target ≤25%"),
+        ("ROAS",             f"{curr_roas:.2f}x" if curr_roas else "N/A", "Target ≥4x"),
+        ("TACOS",            fmt_pct(curr_tacos_hero),         "Total ad ratio"),
+        ("Ad Sales",         fmt_currency(total_ad_sales),    "Ad-attributed"),
+    ]
+    hero_html = '<div class="kpi-hero"><div style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">Current Baseline Performance</div><div class="kpi-hero-row">'
+    for label, val, sub in hero_items:
+        hero_html += f'<div class="kpi-hero-item"><div class="kpi-hero-label">{label}</div><div class="kpi-hero-value">{val}</div><div class="kpi-hero-sub">{sub}</div></div>'
+    hero_html += "</div></div>"
+    st.markdown(hero_html, unsafe_allow_html=True)
+
     # ── Live Impact Dashboard ───────────────────────────────────────────────────
     st.markdown('<div class="section-header">⚡ Live Impact Dashboard — All Metrics Updated</div>', unsafe_allow_html=True)
     st.markdown("""
-    <div style="background:linear-gradient(90deg,#4f46e5 0%,#6366f1 100%);
-                border-radius:8px;padding:11px 18px;margin-bottom:16px;">
-        <span style="color:#ffffff;font-size:14px;font-weight:800;letter-spacing:.2px;">
-        ⚡ Every metric below updates instantly when you change Custom Targets or Channel Budget Split in the sidebar.
-        </span>
+    <div class="callout-banner">
+        <strong>⚡ Live update:</strong> Every metric below recalculates instantly when you change
+        Custom Targets or Channel Budget Split in the sidebar — no page reload needed.
     </div>
     """, unsafe_allow_html=True)
 
