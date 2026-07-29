@@ -41,6 +41,7 @@ from pages.tab_trend           import render_trend_tab
 from pages.tab_forecast        import render_forecast
 from pages.tab_recommendations import render_recommendations
 from pages.tab_logic           import render_logic_tab
+from pages.tab_intelligence    import render_intelligence_tab
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -848,9 +849,11 @@ def main():
     ads_metrics  = {}
     vendor_metrics = {}
 
-    with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds..."):
+    with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds…"):
         if ads_file:
             try:
+                with st.spinner("🔍 Parsing Amazon Ads report (PyArrow fast path)…"):
+                    pass  # spinner message updated; actual work below
                 ads_df, ads_metrics = _load_ads(ads_file)
                 missing = validate_ads_report(ads_df)
                 if missing:
@@ -880,7 +883,8 @@ def main():
         return
 
     # ── Pre-compute breakdowns ──────────────────────────────────────────────
-    bd             = _compute_breakdowns(ads_df, vendor_df)
+    with st.spinner("⚙️ Computing campaign, ASIN and trend breakdowns…"):
+        bd = _compute_breakdowns(ads_df, vendor_df)
     campaign_df    = bd["campaign_df"]
     asin_ads_df    = bd["asin_ads_df"]
     asin_vendor_df = bd["asin_vendor_df"]
@@ -894,11 +898,12 @@ def main():
     prod_trend_df  = bd["prod_trend_df"]
 
     # ── Tabs ────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Key Metrics",
         "📦 Product Intelligence",
         "📅 Trend Analysis",
         "📈 Forecast & Media Plan",
+        "🧠 Amazon Intelligence",
         "💡 Recommendations",
         "⚙️ How It Works",
     ])
@@ -921,9 +926,18 @@ def main():
             )
 
     with tab5:
-        render_recommendations(ads_metrics, vendor_metrics, scenarios)
+        render_intelligence_tab(
+            asin_ads_df=asin_ads_df,
+            merged_asin_df=merged_asin_df,
+            campaign_df=campaign_df,
+            ads_metrics=ads_metrics,
+            scenarios=scenarios,
+        )
 
     with tab6:
+        render_recommendations(ads_metrics, vendor_metrics, scenarios)
+
+    with tab7:
         render_logic_tab()
 
     # ── Download ─────────────────────────────────────────────────────────────
