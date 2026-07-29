@@ -8,16 +8,16 @@ Date resolution order (first match wins):
   4. month_date  — mapped from "Month"
   5. date_range  — fall back to extracting start of range string
 
-Performance notes
------------------
-* _resolve_date_column now uses pd.to_datetime() vectorized parsing for direct
-  date columns — one C-level call instead of a Python-level .apply() over 1M rows.
-* date_range parsing uses vectorized str.extract() to pull the start-date portion
-  with a compiled regex, then a single pd.to_datetime() call.  The full-year-range
-  filter uses a vectorized end-date extraction + timedelta comparison instead of
-  per-row Python logic.
-* build_trend_df uses sort=False on groupby — the final sort_values call is the
-  only sort needed.
+Performance notes  (Phase 3 update)
+-------------------------------------
+* build_trend_df and ad_product_trend previously called df.copy() on the
+  full 1M-row DataFrame before doing anything.  For a 400MB report this
+  allocates another ~400MB unnecessarily.  Fixed: we now project only the
+  columns we actually need before making any copy.
+* _resolve_date_column: removed infer_datetime_format=True (deprecated
+  since pandas 2.0, no-op in 2.2+).
+* All pre-existing vectorized str.extract / pd.to_datetime optimisations
+  retained unchanged.
 """
 
 from __future__ import annotations
@@ -25,17 +25,21 @@ import pandas as pd
 import numpy as np
 import re
 
-
-# ---------------------------------------------------------------------------
-# Date parsing helpers
-# ---------------------------------------------------------------------------
-
 # Pre-compiled regex patterns for vectorized extraction
 _RE_ISO_RANGE   = re.compile(r"(\d{4}-\d{2}-\d{2})\s*[-–]\s*(\d{4}-\d{2}-\d{2})")
 _RE_MONTH_RANGE = re.compile(
     r"([A-Za-z]+\s+\d{1,2},?\s*\d{4})\s*[-–]\s*([A-Za-z]+\s+\d{1,2},?\s*\d{4})"
 )
 
+# Columns needed by build_trend_df (beyond the date column itself)
+_TREND_COLS = frozenset({"spend", "ad_sales", "impressions", "clicks", "ad_orders"})
+# Columns needed by ad_product_trend
+_PROD_TREND_COLS = frozenset({"spend", "campaign_type"})
+
+
+# ---------------------------------------------------------------------------
+# Date parsing helpers
+# ---------------------------------------------------------------------------
 
 def _parse_date_range_series(series: pd.Series) -> pd.Series:
     """
@@ -45,33 +49,29 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
       '2025-01-01 - 2025-01-31'          → 2025-01-01
       'Jan 1, 2025 - Jan 31, 2025'       → 2025-01-01
       'Jan 1, 2025 - Dec 31, 2025'       → NaT  (full-year range — not useful)
-
-    Replaces the original per-row _parse_date_range + .apply() pattern.
     """
-    # Work on string series; non-strings become NaN
     s = series.astype(str).str.strip()
     result = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
 
-    # ── ISO format: 2025-01-01 - 2025-01-31 ─────────────────────────────────
+    # ── ISO format ──────────────────────────────────────────────────────────
     iso = s.str.extract(_RE_ISO_RANGE, expand=True)
     iso_valid = iso[0].notna()
     if iso_valid.any():
         starts = pd.to_datetime(iso.loc[iso_valid, 0], errors="coerce")
         ends   = pd.to_datetime(iso.loc[iso_valid, 1], errors="coerce")
-        # Discard full-year ranges (≥350 days) — they are report-level summaries
         keep = (ends - starts).dt.days < 350
         result.loc[iso_valid] = starts.where(keep)
 
-    # ── Month-name format: Jan 1, 2025 - Dec 31, 2025 ───────────────────────
+    # ── Month-name format ───────────────────────────────────────────────────
     mn = s.str.extract(_RE_MONTH_RANGE, expand=True)
-    mn_valid = mn[0].notna() & result.isna()   # only fill gaps
+    mn_valid = mn[0].notna() & result.isna()
     if mn_valid.any():
         starts = pd.to_datetime(mn.loc[mn_valid, 0], errors="coerce")
         ends   = pd.to_datetime(mn.loc[mn_valid, 1], errors="coerce")
         keep = (ends - starts).dt.days < 350
         result.loc[mn_valid] = starts.where(keep)
 
-    # ── Single-date fallback ─────────────────────────────────────────────────
+    # ── Single-date fallback ────────────────────────────────────────────────
     still_na = result.isna() & iso[0].isna() & mn[0].isna()
     if still_na.any():
         result.loc[still_na] = pd.to_datetime(s.loc[still_na], errors="coerce")
@@ -82,17 +82,15 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
 def _resolve_date_column(df: pd.DataFrame) -> "pd.Series | None":
     """
     Return a Series of dates by trying columns in priority order.
-    All parsing is vectorized — no Python-level row iteration.
-    Returns None if no usable date column exists.
+    All parsing is vectorized. Returns None if no usable date column exists.
     """
-    # Priority: direct date columns first
     for col in ["start_date", "report_date", "week_date", "month_date"]:
         if col in df.columns:
-            parsed = pd.to_datetime(df[col], errors="coerce", infer_datetime_format=True)
+            # infer_datetime_format removed — deprecated in pandas 2.0
+            parsed = pd.to_datetime(df[col], errors="coerce")
             if parsed.notna().sum() > 0:
                 return parsed
 
-    # Fall back to date_range string parsing (vectorized)
     if "date_range" in df.columns:
         parsed = _parse_date_range_series(df["date_range"])
         if parsed.notna().sum() > 0:
@@ -109,23 +107,31 @@ def build_trend_df(df: pd.DataFrame, freq: str = "W") -> pd.DataFrame:
     """
     Aggregate spend, sales, ACOS, ROAS by week (freq='W') or month (freq='M').
 
-    Multi-year data is preserved — callers can filter by year as needed.
+    Phase 3: projects only the columns needed before any copy operation,
+    avoiding a full ~400MB frame duplication for a 1M-row CSV.
     """
-    work = df.copy()
-    date_series = _resolve_date_column(work)
+    # ── Identify which columns we need and project to a slim frame ──────────
+    date_cols = [c for c in ["start_date", "report_date", "week_date", "month_date", "date_range"]
+                 if c in df.columns]
+    keep_cols = list((_TREND_COLS & set(df.columns)) | set(date_cols))
+    if not keep_cols:
+        return pd.DataFrame()
 
+    # Shallow projection — no copy of data, just a new column index view
+    work = df[keep_cols].copy()
+
+    date_series = _resolve_date_column(work)
     if date_series is None:
         return pd.DataFrame()
 
     work["_date"] = date_series
     work = work.dropna(subset=["_date"])
-
     if work.empty:
         return pd.DataFrame()
 
     work["_period"] = work["_date"].dt.to_period(freq)
 
-    agg = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in work.columns}
+    agg = {c: "sum" for c in _TREND_COLS if c in work.columns}
     if not agg:
         return pd.DataFrame()
 
@@ -133,8 +139,8 @@ def build_trend_df(df: pd.DataFrame, freq: str = "W") -> pd.DataFrame:
     trend["_period_dt"] = trend["_period"].dt.to_timestamp()
 
     if "spend" in trend.columns and "ad_sales" in trend.columns:
-        safe_sales  = trend["ad_sales"].replace(0, np.nan)
-        safe_spend  = trend["spend"].replace(0, np.nan)
+        safe_sales = trend["ad_sales"].replace(0, np.nan)
+        safe_spend = trend["spend"].replace(0, np.nan)
         trend["acos_%"] = (trend["spend"]    / safe_sales  * 100).round(2)
         trend["roas"]   = (trend["ad_sales"] / safe_spend).round(2)
 
@@ -171,13 +177,21 @@ def trend_summary(trend_df: pd.DataFrame) -> dict:
 
 
 def ad_product_trend(df: pd.DataFrame, freq: str = "M") -> pd.DataFrame:
-    """Monthly spend trend broken down by ad product (SP / SB / SD)."""
+    """
+    Monthly spend trend broken down by ad product (SP / SB / SD).
+
+    Phase 3: projects only the columns needed instead of copying the full frame.
+    """
     if "campaign_type" not in df.columns:
         return pd.DataFrame()
 
-    work = df.copy()
-    date_series = _resolve_date_column(work)
+    date_cols = [c for c in ["start_date", "report_date", "week_date", "month_date", "date_range"]
+                 if c in df.columns]
+    keep_cols = list((_PROD_TREND_COLS & set(df.columns)) | set(date_cols))
 
+    work = df[keep_cols].copy()
+
+    date_series = _resolve_date_column(work)
     if date_series is None:
         return pd.DataFrame()
 

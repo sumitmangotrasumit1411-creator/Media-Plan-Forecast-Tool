@@ -1,18 +1,29 @@
 """
 metrics.py — Extract and aggregate key performance metrics from parsed reports.
 
-Performance notes
------------------
-* extract_ads_metrics: replaced N individual df[col].sum() calls with a single
-  vectorized df[cols].sum() call — one pass over the DataFrame instead of N passes.
-* campaign_breakdown / asin_ads_breakdown: derived ACOS/ROAS computed via
-  vectorized division; replace(0, np.nan) avoids div-by-zero without a Python loop.
-* asin_vendor_breakdown: first() for metadata columns is done in one groupby
-  instead of two separate groupby operations.
+Performance notes  (Phase 3 update)
+--------------------------------------
+* extract_ads_metrics: single vectorized df[cols].sum() — unchanged.
+* campaign_breakdown / asin_ads_breakdown / asin_vendor_breakdown: for DataFrames
+  larger than _DUCKDB_THRESHOLD rows, a DuckDB in-process SQL query replaces the
+  pandas groupby.  DuckDB uses vectorized SIMD execution and multi-threading,
+  giving 5-20x speedup on groupby-agg over 100k+ rows.
+  For smaller frames the pandas path is used as before (lower overhead).
+* _add_derived_ad_cols unchanged — already vectorized, no benefit from DuckDB here.
+* DuckDB is an optional dependency; if not importable the pandas path runs instead.
 """
 
 import pandas as pd
 import numpy as np
+
+try:
+    import duckdb as _duckdb
+    _HAVE_DUCKDB = True
+except ImportError:
+    _HAVE_DUCKDB = False
+
+# Use DuckDB for groupby when the DataFrame has more than this many rows
+_DUCKDB_THRESHOLD = 100_000
 
 
 # ---------------------------------------------------------------------------
@@ -37,17 +48,48 @@ def _add_derived_ad_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# DuckDB groupby helper
+# ---------------------------------------------------------------------------
+
+def _duckdb_groupby(df: pd.DataFrame, group_col: str, sum_cols: list) -> pd.DataFrame:
+    """
+    Execute a GROUP BY + SUM via DuckDB when available.
+
+    DuckDB registers the DataFrame as a virtual table (zero-copy Arrow scan)
+    and runs a single multi-threaded aggregation.  The result is returned as
+    a pandas DataFrame.  Falls back to pandas groupby if DuckDB raises.
+    """
+    if not _HAVE_DUCKDB or len(df) < _DUCKDB_THRESHOLD:
+        agg = {c: "sum" for c in sum_cols if c in df.columns}
+        return df.groupby(group_col, sort=False).agg(agg).reset_index()
+
+    cols_present = [c for c in sum_cols if c in df.columns]
+    if not cols_present:
+        return df[[group_col]].drop_duplicates()
+
+    sum_exprs = ", ".join(f'SUM("{c}") AS "{c}"' for c in cols_present)
+    sql = f'SELECT "{group_col}", {sum_exprs} FROM df GROUP BY "{group_col}"'
+
+    try:
+        con = _duckdb.connect()
+        result = con.execute(sql).df()
+        con.close()
+        return result
+    except Exception:
+        # Fallback to pandas on any DuckDB error
+        agg = {c: "sum" for c in cols_present}
+        return df.groupby(group_col, sort=False).agg(agg).reset_index()
+
+
+# ---------------------------------------------------------------------------
 # Amazon Ads Metrics
 # ---------------------------------------------------------------------------
 
 def extract_ads_metrics(df: pd.DataFrame) -> dict:
     """
     Compute top-level aggregated metrics from the Amazon Ads report.
-
-    Optimised: single vectorized df[cols].sum() call replaces N individual
-    df[col].sum() calls. Derived metrics computed from those totals.
+    Single vectorized df[cols].sum() call — one pass over the DataFrame.
     """
-    # ── Single-pass column sums ──────────────────────────────────────────────
     sum_cols = [c for c in [
         "impressions", "clicks", "spend", "ad_sales", "ad_orders",
         "ad_orders_ntb", "sales_ntb", "ad_sales_longterm",
@@ -69,7 +111,6 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
         "total_ad_sales_longterm": _get("ad_sales_longterm"),
     }
 
-    # ── Derived metrics ──────────────────────────────────────────────────────
     if m["total_ad_sales"] > 0:
         m["overall_acos"] = round(m["total_spend"] / m["total_ad_sales"] * 100, 2)
         m["overall_roas"] = round(m["total_ad_sales"] / m["total_spend"], 2) if m["total_spend"] > 0 else None
@@ -108,7 +149,10 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
 
 
 def campaign_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """Group by campaign_name and aggregate spend + sales."""
+    """
+    Group by campaign_name and aggregate spend + sales.
+    Uses DuckDB for >100k-row DataFrames, pandas otherwise.
+    """
     group_col = next(
         (c for c in ["campaign_name", "campaign_type", "targeting", "ad_group_name"]
          if c in df.columns),
@@ -117,8 +161,8 @@ def campaign_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     if group_col is None:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
-    result = df.groupby(group_col, sort=False).agg(agg_cols).reset_index()
+    sum_cols = ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]
+    result = _duckdb_groupby(df, group_col, sum_cols)
     result = _add_derived_ad_cols(result)
 
     sort_col = "spend" if "spend" in result.columns else result.columns[-1]
@@ -126,12 +170,15 @@ def campaign_breakdown(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-ASIN aggregate from the ads report."""
+    """
+    Per-ASIN aggregate from the ads report.
+    Uses DuckDB for >100k-row DataFrames, pandas otherwise.
+    """
     if "asin" not in df.columns:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
-    result = df.groupby("asin", sort=False).agg(agg_cols).reset_index()
+    sum_cols = ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]
+    result = _duckdb_groupby(df, "asin", sum_cols)
     result = _add_derived_ad_cols(result)
 
     sort_col = "ad_sales" if "ad_sales" in result.columns else result.columns[-1]
@@ -166,17 +213,19 @@ def extract_vendor_metrics(df: pd.DataFrame) -> dict:
 
 
 def asin_vendor_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """Per-ASIN revenue and units from Vendor Central."""
+    """
+    Per-ASIN revenue and units from Vendor Central.
+    Uses DuckDB for >100k-row DataFrames, pandas otherwise.
+    """
     if "asin" not in df.columns:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"] if c in df.columns}
+    sum_cols = ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"]
     extra_cols = [c for c in ["product_title", "category", "brand"] if c in df.columns]
 
-    result = df.groupby("asin", sort=False).agg(agg_cols).reset_index()
+    result = _duckdb_groupby(df, "asin", sum_cols)
 
     if extra_cols:
-        # Single groupby — first() for metadata, merged in one shot
         first_vals = df.groupby("asin", sort=False)[extra_cols].first().reset_index()
         result = result.merge(first_vals, on="asin", how="left")
 

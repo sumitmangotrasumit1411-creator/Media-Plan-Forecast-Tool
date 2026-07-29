@@ -2,12 +2,14 @@
 insights.py — Search term intelligence, product analysis, match type efficiency,
 NTB analysis, bid strategy breakdown, and wasted spend detection.
 
-Performance notes
------------------
-* product_intelligence: previously called df.groupby(asin).agg() twice (once for
-  numeric sums, once for first() metadata). Now done in two groupbys with a merge,
-  same as metrics.asin_ads_breakdown — but results are not re-computed if the
-  caller already has asin_ads_df available.
+Performance notes  (Phase 3 update)
+-------------------------------------
+* DuckDB groupby: for DataFrames > _DUCKDB_THRESHOLD rows, all groupby-agg
+  operations are delegated to DuckDB (zero-copy Arrow scan, multi-threaded SIMD).
+  Falls back to pandas if DuckDB is unavailable or raises.
+* product_intelligence: numeric aggregation and metadata first() done in two
+  separate groupbys with a merge — pandas cannot mix sum() and first() for object
+  columns in the same agg() call without surprising results.
 * All groupby calls use sort=False — caller sorts by the relevant column at the
   end, so the internal sort is wasted work.
 * Derived columns (acos_%, roas, cpc, cvr_%) factored into the shared
@@ -19,7 +21,7 @@ Performance notes
 from __future__ import annotations
 import pandas as pd
 import numpy as np
-from metrics import _add_derived_ad_cols
+from metrics import _add_derived_ad_cols, _duckdb_groupby, _HAVE_DUCKDB, _DUCKDB_THRESHOLD
 
 
 # ---------------------------------------------------------------------------
@@ -37,13 +39,19 @@ def search_term_analysis(df: pd.DataFrame) -> dict:
     if st_col is None:
         return result
 
-    agg_cols = {c: "sum" for c in [
+    sum_cols = [c for c in [
         "spend", "ad_sales", "ad_orders", "impressions", "clicks",
         "ad_orders_ntb", "ad_sales_longterm",
-    ] if c in df.columns}
+    ] if c in df.columns]
 
-    st_df = df.groupby(st_col, sort=False).agg(agg_cols).reset_index()
-    st_df = st_df.rename(columns={st_col: "search_term"})
+    if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+        st_df = _duckdb_groupby(df, st_col, sum_cols)
+        if st_col not in st_df.columns and "search_term" not in st_df.columns:
+            st_df = st_df.rename(columns={st_df.columns[0]: "search_term"})
+    else:
+        agg_cols = {c: "sum" for c in sum_cols}
+        st_df = df.groupby(st_col, sort=False).agg(agg_cols).reset_index()
+        st_df = st_df.rename(columns={st_col: "search_term"})
     st_df = _add_derived_ad_cols(st_df)
 
     if "ad_orders" in st_df.columns and "ad_orders_ntb" in st_df.columns:
@@ -114,8 +122,11 @@ def match_type_analysis(df: pd.DataFrame) -> pd.DataFrame:
     if "match_type" not in df.columns:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
-    result = df.groupby("match_type", sort=False).agg(agg_cols).reset_index()
+    sum_cols = [c for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns]
+    if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+        result = _duckdb_groupby(df, "match_type", sum_cols)
+    else:
+        result = df.groupby("match_type", sort=False).agg({c: "sum" for c in sum_cols}).reset_index()
     result = _add_derived_ad_cols(result)
 
     sort_col = "spend" if "spend" in result.columns else result.columns[-1]
@@ -140,12 +151,15 @@ def product_intelligence(df: pd.DataFrame) -> dict:
     if "asin" not in df.columns:
         return result
 
-    agg_cols = {c: "sum" for c in [
+    sum_cols = [c for c in [
         "spend", "ad_sales", "impressions", "clicks", "ad_orders",
         "ad_orders_ntb", "ad_sales_longterm",
-    ] if c in df.columns}
+    ] if c in df.columns]
 
-    asin_df = df.groupby("asin", sort=False).agg(agg_cols).reset_index()
+    if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+        asin_df = _duckdb_groupby(df, "asin", sum_cols)
+    else:
+        asin_df = df.groupby("asin", sort=False).agg({c: "sum" for c in sum_cols}).reset_index()
     asin_df = _add_derived_ad_cols(asin_df)
 
     first_cols = [c for c in ["product_title", "category", "subcategory", "brand"] if c in df.columns]
@@ -169,8 +183,11 @@ def product_intelligence(df: pd.DataFrame) -> dict:
 
     # Category rollup — separate groupby (different granularity)
     if "category" in df.columns:
-        cat_agg = {c: "sum" for c in ["spend", "ad_sales", "ad_orders", "impressions", "clicks"] if c in df.columns}
-        cat_df = df.groupby("category", sort=False).agg(cat_agg).reset_index()
+        cat_sum_cols = [c for c in ["spend", "ad_sales", "ad_orders", "impressions", "clicks"] if c in df.columns]
+        if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+            cat_df = _duckdb_groupby(df, "category", cat_sum_cols)
+        else:
+            cat_df = df.groupby("category", sort=False).agg({c: "sum" for c in cat_sum_cols}).reset_index()
         cat_df = _add_derived_ad_cols(cat_df)
         result["by_category"] = (
             cat_df.sort_values("ad_sales", ascending=False)
@@ -191,8 +208,11 @@ def bid_strategy_analysis(df: pd.DataFrame) -> pd.DataFrame:
     if "bid_strategy" not in df.columns:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
-    result = df.groupby("bid_strategy", sort=False).agg(agg_cols).reset_index()
+    sum_cols = [c for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns]
+    if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+        result = _duckdb_groupby(df, "bid_strategy", sum_cols)
+    else:
+        result = df.groupby("bid_strategy", sort=False).agg({c: "sum" for c in sum_cols}).reset_index()
     result = _add_derived_ad_cols(result)
 
     sort_col = "spend" if "spend" in result.columns else result.columns[-1]
@@ -208,8 +228,11 @@ def ad_product_analysis(df: pd.DataFrame) -> pd.DataFrame:
     if "campaign_type" not in df.columns:
         return pd.DataFrame()
 
-    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
-    result = df.groupby("campaign_type", sort=False).agg(agg_cols).reset_index()
+    sum_cols = [c for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns]
+    if _HAVE_DUCKDB and len(df) > _DUCKDB_THRESHOLD:
+        result = _duckdb_groupby(df, "campaign_type", sum_cols)
+    else:
+        result = df.groupby("campaign_type", sort=False).agg({c: "sum" for c in sum_cols}).reset_index()
     result = result.rename(columns={"campaign_type": "ad_product"})
     result = _add_derived_ad_cols(result)
 
