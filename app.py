@@ -1451,7 +1451,55 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
     # Use Month (1–12) as the index so it shows 1→12, not 0→11
     disp_df = disp_df.set_index("Month")
 
+    # ── Totals row ───────────────────────────────────────────────────────────
+    # Dollar columns → sum; ACOS/ROAS → weighted average; text cols → label
+    totals = {}
+    for c in disp_df.columns:
+        if c == "Month Name":
+            totals[c] = "TOTAL"
+        elif c == "Events":
+            totals[c] = "—"
+        elif "Uplift" in c:
+            totals[c] = None          # not meaningful as a total
+        elif "ACOS" in c:
+            # weighted-average ACOS = total spend / total sales × 100
+            if "$" not in c:          # it's a % column, not a $ column
+                spend_col = next((x for x in disp_df.columns if "Spend" in x and
+                                  ("Actual" in x) == ("Actual" in c) and "$" in x), None)
+                sales_col = next((x for x in disp_df.columns if "Sales" in x and
+                                  ("Actual" in x) == ("Actual" in c) and "$" in x), None)
+                if spend_col and sales_col:
+                    tot_sp = disp_df[spend_col].sum(skipna=True)
+                    tot_sl = disp_df[sales_col].sum(skipna=True)
+                    totals[c] = round(tot_sp / tot_sl * 100, 2) if tot_sl > 0 else None
+                else:
+                    totals[c] = None
+        elif "ROAS" in c:
+            # weighted-average ROAS = total sales / total spend
+            spend_col = next((x for x in disp_df.columns if "Spend" in x and
+                              ("Actual" in x) == ("Actual" in c) and "$" in x), None)
+            sales_col = next((x for x in disp_df.columns if "Sales" in x and
+                              ("Actual" in x) == ("Actual" in c) and "$" in x), None)
+            if spend_col and sales_col:
+                tot_sp = disp_df[spend_col].sum(skipna=True)
+                tot_sl = disp_df[sales_col].sum(skipna=True)
+                totals[c] = round(tot_sl / tot_sp, 2) if tot_sp > 0 else None
+            else:
+                totals[c] = None
+        elif "$" in c:
+            totals[c] = disp_df[c].sum(skipna=True)
+        else:
+            totals[c] = None
+
+    totals_row = pd.DataFrame([totals], index=["TOTAL"])
+    disp_df = pd.concat([disp_df, totals_row])
+
     def _style_monthly_row(row):
+        if row.name == "TOTAL":
+            return [
+                "background-color: #1e1b4b; color: #ffffff; font-weight: 800; "
+                "font-size: 13px; border-top: 2px solid #f97316;"
+            ] * len(row)
         if row["Events"] != "—":
             return ["background-color: #fffbeb; font-weight: 600"] * len(row)
         return [""] * len(row)
@@ -1471,7 +1519,7 @@ def render_forecast(ads_metrics, vendor_metrics, campaign_df, growth_options, ch
             fmt_map[c] = "+{:.0f}%"
 
     styled = disp_df.style.format(fmt_map, na_rep="—").apply(_style_monthly_row, axis=1)
-    st.dataframe(styled, use_container_width=True, height=460)
+    st.dataframe(styled, use_container_width=True, height=494)
 
     return scenarios
 
