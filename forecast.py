@@ -316,11 +316,19 @@ def monthly_forecast(
 
         # ── Projected spend ──────────────────────────────────────────────
         if actual_spend is not None:
-            # Have actuals — scale by growth + event multiplier
-            proj_spend = round(actual_spend * growth_factor * spend_multiplier, 2)
+            # Have actuals — scale by growth factor only.
+            # The spend_multiplier is NOT applied here because the actual
+            # spend already reflects real seasonal patterns for that month
+            # (e.g. Jan was genuinely high — applying ×1.0 again is correct,
+            # but Jul Prime Day actual already baked in the uplift, so
+            # multiplying by 1.30 again would double-count it).
+            proj_spend = round(actual_spend * growth_factor, 2)
         elif annual_proj_spend > 0:
-            # No actuals but have annual total — distribute seasonally
-            proj_spend = round(annual_proj_spend * seasonal_weights[idx] * spend_multiplier, 2)
+            # No actuals — distribute annual total using seasonal weights.
+            # seasonal_weights already encodes the event multipliers
+            # (computed as multiplier / sum_of_all_multipliers), so we must
+            # NOT multiply by spend_multiplier again here.
+            proj_spend = round(annual_proj_spend * seasonal_weights[idx], 2)
         else:
             proj_spend = 0.0
 
