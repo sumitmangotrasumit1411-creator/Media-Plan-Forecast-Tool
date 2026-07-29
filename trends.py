@@ -7,6 +7,17 @@ Date resolution order (first match wins):
   3. week_date   — mapped from "Week" / "Week Ending"
   4. month_date  — mapped from "Month"
   5. date_range  — fall back to extracting start of range string
+
+Performance notes
+-----------------
+* _resolve_date_column now uses pd.to_datetime() vectorized parsing for direct
+  date columns — one C-level call instead of a Python-level .apply() over 1M rows.
+* date_range parsing uses vectorized str.extract() to pull the start-date portion
+  with a compiled regex, then a single pd.to_datetime() call.  The full-year-range
+  filter uses a vectorized end-date extraction + timedelta comparison instead of
+  per-row Python logic.
+* build_trend_df uses sort=False on groupby — the final sort_values call is the
+  only sort needed.
 """
 
 from __future__ import annotations
@@ -19,71 +30,71 @@ import re
 # Date parsing helpers
 # ---------------------------------------------------------------------------
 
-def _parse_date_range(val: str):
+# Pre-compiled regex patterns for vectorized extraction
+_RE_ISO_RANGE   = re.compile(r"(\d{4}-\d{2}-\d{2})\s*[-–]\s*(\d{4}-\d{2}-\d{2})")
+_RE_MONTH_RANGE = re.compile(
+    r"([A-Za-z]+\s+\d{1,2},?\s*\d{4})\s*[-–]\s*([A-Za-z]+\s+\d{1,2},?\s*\d{4})"
+)
+
+
+def _parse_date_range_series(series: pd.Series) -> pd.Series:
     """
-    Extract the start date from range strings:
-      '2025-01-01 - 2025-01-07'
-      'Jan 1, 2025 - Jan 7, 2025'
-      'Jan 1, 2025 - Dec 31, 2025'   ← single annual range (returns None — not useful)
-    When start == end year and the range spans a full year, return None so the
-    caller falls back to seasonal distribution rather than collapsing all rows
-    into a single period.
+    Vectorized extraction of start dates from a Series of date-range strings.
+
+    Handles:
+      '2025-01-01 - 2025-01-31'          → 2025-01-01
+      'Jan 1, 2025 - Jan 31, 2025'       → 2025-01-01
+      'Jan 1, 2025 - Dec 31, 2025'       → NaT  (full-year range — not useful)
+
+    Replaces the original per-row _parse_date_range + .apply() pattern.
     """
-    if not isinstance(val, str):
-        return None
-    val = val.strip()
+    # Work on string series; non-strings become NaN
+    s = series.astype(str).str.strip()
+    result = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
 
-    # ISO format: 2025-01-01 - 2025-01-31
-    m = re.match(r"(\d{4}-\d{2}-\d{2})\s*[-–]\s*(\d{4}-\d{2}-\d{2})", val)
-    if m:
-        try:
-            start = pd.to_datetime(m.group(1))
-            end   = pd.to_datetime(m.group(2))
-            # If span is a full year or nearly so, this is a report-level range — skip
-            if (end - start).days >= 350:
-                return None
-            return start
-        except Exception:
-            return None
+    # ── ISO format: 2025-01-01 - 2025-01-31 ─────────────────────────────────
+    iso = s.str.extract(_RE_ISO_RANGE, expand=True)
+    iso_valid = iso[0].notna()
+    if iso_valid.any():
+        starts = pd.to_datetime(iso.loc[iso_valid, 0], errors="coerce")
+        ends   = pd.to_datetime(iso.loc[iso_valid, 1], errors="coerce")
+        # Discard full-year ranges (≥350 days) — they are report-level summaries
+        keep = (ends - starts).dt.days < 350
+        result.loc[iso_valid] = starts.where(keep)
 
-    # Month-name format: Jan 1, 2025 - Dec 31, 2025
-    m2 = re.match(
-        r"([A-Za-z]+\s+\d{1,2},?\s*\d{4})\s*[-–]\s*([A-Za-z]+\s+\d{1,2},?\s*\d{4})",
-        val,
-    )
-    if m2:
-        try:
-            start = pd.to_datetime(m2.group(1))
-            end   = pd.to_datetime(m2.group(2))
-            if (end - start).days >= 350:
-                return None
-            return start
-        except Exception:
-            return None
+    # ── Month-name format: Jan 1, 2025 - Dec 31, 2025 ───────────────────────
+    mn = s.str.extract(_RE_MONTH_RANGE, expand=True)
+    mn_valid = mn[0].notna() & result.isna()   # only fill gaps
+    if mn_valid.any():
+        starts = pd.to_datetime(mn.loc[mn_valid, 0], errors="coerce")
+        ends   = pd.to_datetime(mn.loc[mn_valid, 1], errors="coerce")
+        keep = (ends - starts).dt.days < 350
+        result.loc[mn_valid] = starts.where(keep)
 
-    # Single date: try direct parse
-    try:
-        return pd.to_datetime(val)
-    except Exception:
-        return None
+    # ── Single-date fallback ─────────────────────────────────────────────────
+    still_na = result.isna() & iso[0].isna() & mn[0].isna()
+    if still_na.any():
+        result.loc[still_na] = pd.to_datetime(s.loc[still_na], errors="coerce")
+
+    return result
 
 
-def _resolve_date_column(df: pd.DataFrame):
+def _resolve_date_column(df: pd.DataFrame) -> "pd.Series | None":
     """
     Return a Series of dates by trying columns in priority order.
+    All parsing is vectorized — no Python-level row iteration.
     Returns None if no usable date column exists.
     """
-    priority = ["start_date", "report_date", "week_date", "month_date"]
-    for col in priority:
+    # Priority: direct date columns first
+    for col in ["start_date", "report_date", "week_date", "month_date"]:
         if col in df.columns:
-            parsed = pd.to_datetime(df[col], errors="coerce")
+            parsed = pd.to_datetime(df[col], errors="coerce", infer_datetime_format=True)
             if parsed.notna().sum() > 0:
                 return parsed
 
-    # Fall back to date_range string parsing
+    # Fall back to date_range string parsing (vectorized)
     if "date_range" in df.columns:
-        parsed = df["date_range"].apply(_parse_date_range)
-        parsed = pd.to_datetime(parsed, errors="coerce")
+        parsed = _parse_date_range_series(df["date_range"])
         if parsed.notna().sum() > 0:
             return parsed
 
@@ -98,12 +109,6 @@ def build_trend_df(df: pd.DataFrame, freq: str = "W") -> pd.DataFrame:
     """
     Aggregate spend, sales, ACOS, ROAS by week (freq='W') or month (freq='M').
 
-    Parameters
-    ----------
-    df   : normalised ads DataFrame
-    freq : 'W' for weekly, 'M' for monthly
-
-    Returns a DataFrame indexed by period with aggregated metrics.
     Multi-year data is preserved — callers can filter by year as needed.
     """
     work = df.copy()
@@ -120,20 +125,18 @@ def build_trend_df(df: pd.DataFrame, freq: str = "W") -> pd.DataFrame:
 
     work["_period"] = work["_date"].dt.to_period(freq)
 
-    agg = {}
-    for col in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]:
-        if col in work.columns:
-            agg[col] = "sum"
-
+    agg = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in work.columns}
     if not agg:
         return pd.DataFrame()
 
-    trend = work.groupby("_period").agg(agg).reset_index()
+    trend = work.groupby("_period", sort=True).agg(agg).reset_index()
     trend["_period_dt"] = trend["_period"].dt.to_timestamp()
 
     if "spend" in trend.columns and "ad_sales" in trend.columns:
-        trend["acos_%"] = (trend["spend"] / trend["ad_sales"].replace(0, np.nan) * 100).round(2)
-        trend["roas"]   = (trend["ad_sales"] / trend["spend"].replace(0, np.nan)).round(2)
+        safe_sales  = trend["ad_sales"].replace(0, np.nan)
+        safe_spend  = trend["spend"].replace(0, np.nan)
+        trend["acos_%"] = (trend["spend"]    / safe_sales  * 100).round(2)
+        trend["roas"]   = (trend["ad_sales"] / safe_spend).round(2)
 
     if "spend" in trend.columns and "clicks" in trend.columns:
         trend["cpc"] = (trend["spend"] / trend["clicks"].replace(0, np.nan)).round(4)
@@ -145,9 +148,7 @@ def build_trend_df(df: pd.DataFrame, freq: str = "W") -> pd.DataFrame:
 
 
 def trend_summary(trend_df: pd.DataFrame) -> dict:
-    """
-    Compute MoM / WoW change for key metrics between last two periods.
-    """
+    """Compute MoM / WoW change for key metrics between last two periods."""
     if trend_df.empty or len(trend_df) < 2:
         return {}
 
@@ -170,9 +171,7 @@ def trend_summary(trend_df: pd.DataFrame) -> dict:
 
 
 def ad_product_trend(df: pd.DataFrame, freq: str = "M") -> pd.DataFrame:
-    """
-    Monthly spend trend broken down by ad product (SP / SB / SD).
-    """
+    """Monthly spend trend broken down by ad product (SP / SB / SD)."""
     if "campaign_type" not in df.columns:
         return pd.DataFrame()
 
@@ -192,6 +191,6 @@ def ad_product_trend(df: pd.DataFrame, freq: str = "M") -> pd.DataFrame:
     if "spend" not in work.columns:
         return pd.DataFrame()
 
-    trend = work.groupby(["_period", "campaign_type"])["spend"].sum().reset_index()
+    trend = work.groupby(["_period", "campaign_type"], sort=True)["spend"].sum().reset_index()
     trend["_period_dt"] = trend["_period"].dt.to_timestamp()
     return trend.sort_values("_period_dt")

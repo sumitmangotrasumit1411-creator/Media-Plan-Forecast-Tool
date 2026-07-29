@@ -1,9 +1,39 @@
 """
 metrics.py — Extract and aggregate key performance metrics from parsed reports.
+
+Performance notes
+-----------------
+* extract_ads_metrics: replaced N individual df[col].sum() calls with a single
+  vectorized df[cols].sum() call — one pass over the DataFrame instead of N passes.
+* campaign_breakdown / asin_ads_breakdown: derived ACOS/ROAS computed via
+  vectorized division; replace(0, np.nan) avoids div-by-zero without a Python loop.
+* asin_vendor_breakdown: first() for metadata columns is done in one groupby
+  instead of two separate groupby operations.
 """
 
 import pandas as pd
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Internal: shared derived-column helper
+# ---------------------------------------------------------------------------
+
+def _add_derived_ad_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    In-place addition of acos_%, roas, cpc, cvr_% to an already-aggregated df.
+    Called by multiple breakdown functions to avoid duplicating this logic.
+    """
+    if "spend" in df.columns and "ad_sales" in df.columns:
+        safe_sales = df["ad_sales"].replace(0, np.nan)
+        safe_spend = df["spend"].replace(0, np.nan)
+        df["acos_%"] = (df["spend"] / safe_sales * 100).round(2)
+        df["roas"]   = (df["ad_sales"] / safe_spend).round(2)
+    if "spend" in df.columns and "clicks" in df.columns:
+        df["cpc"] = (df["spend"] / df["clicks"].replace(0, np.nan)).round(4)
+    if "clicks" in df.columns and "ad_orders" in df.columns:
+        df["cvr_%"] = (df["ad_orders"] / df["clicks"].replace(0, np.nan) * 100).round(2)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -13,26 +43,33 @@ import numpy as np
 def extract_ads_metrics(df: pd.DataFrame) -> dict:
     """
     Compute top-level aggregated metrics from the Amazon Ads report.
-    Returns a dict of scalar values.
+
+    Optimised: single vectorized df[cols].sum() call replaces N individual
+    df[col].sum() calls. Derived metrics computed from those totals.
     """
-    m = {}
+    # ── Single-pass column sums ──────────────────────────────────────────────
+    sum_cols = [c for c in [
+        "impressions", "clicks", "spend", "ad_sales", "ad_orders",
+        "ad_orders_ntb", "sales_ntb", "ad_sales_longterm",
+    ] if c in df.columns]
 
-    def col_sum(col):
-        return float(df[col].sum()) if col in df.columns else 0.0
+    totals = df[sum_cols].sum() if sum_cols else pd.Series(dtype=float)
 
-    def col_mean(col):
-        return float(df[col].mean()) if col in df.columns else None
+    def _get(col):
+        return float(totals[col]) if col in totals else 0.0
 
-    m["total_impressions"] = col_sum("impressions")
-    m["total_clicks"] = col_sum("clicks")
-    m["total_spend"] = col_sum("spend")
-    m["total_ad_sales"] = col_sum("ad_sales")
-    m["total_ad_orders"] = col_sum("ad_orders")
-    m["total_ad_orders_ntb"] = col_sum("ad_orders_ntb")
-    m["total_ad_sales_ntb"] = col_sum("sales_ntb")
-    m["total_ad_sales_longterm"] = col_sum("ad_sales_longterm")
+    m = {
+        "total_impressions":       _get("impressions"),
+        "total_clicks":            _get("clicks"),
+        "total_spend":             _get("spend"),
+        "total_ad_sales":          _get("ad_sales"),
+        "total_ad_orders":         _get("ad_orders"),
+        "total_ad_orders_ntb":     _get("ad_orders_ntb"),
+        "total_ad_sales_ntb":      _get("sales_ntb"),
+        "total_ad_sales_longterm": _get("ad_sales_longterm"),
+    }
 
-    # Derived — ACOS / ROAS
+    # ── Derived metrics ──────────────────────────────────────────────────────
     if m["total_ad_sales"] > 0:
         m["overall_acos"] = round(m["total_spend"] / m["total_ad_sales"] * 100, 2)
         m["overall_roas"] = round(m["total_ad_sales"] / m["total_spend"], 2) if m["total_spend"] > 0 else None
@@ -40,7 +77,6 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
         m["overall_acos"] = None
         m["overall_roas"] = None
 
-    # CTR / CPC
     if m["total_clicks"] > 0:
         m["overall_ctr"] = round(m["total_clicks"] / m["total_impressions"] * 100, 4) if m["total_impressions"] > 0 else None
         m["overall_cpc"] = round(m["total_spend"] / m["total_clicks"], 4)
@@ -48,25 +84,21 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
         m["overall_ctr"] = None
         m["overall_cpc"] = None
 
-    # Conversion rate
     if m["total_ad_orders"] > 0 and m["total_clicks"] > 0:
         m["conversion_rate"] = round(m["total_ad_orders"] / m["total_clicks"] * 100, 2)
     else:
         m["conversion_rate"] = None
 
-    # New to Brand %
     if m["total_ad_orders_ntb"] > 0 and m["total_ad_orders"] > 0:
         m["ntb_order_pct"] = round(m["total_ad_orders_ntb"] / m["total_ad_orders"] * 100, 1)
     else:
         m["ntb_order_pct"] = None
 
-    # Long-term ROAS
     if m["total_ad_sales_longterm"] > 0 and m["total_spend"] > 0:
         m["longterm_roas"] = round(m["total_ad_sales_longterm"] / m["total_spend"], 2)
     else:
         m["longterm_roas"] = None
 
-    # Cost per order
     if m["total_ad_orders"] > 0 and m["total_spend"] > 0:
         m["cost_per_order"] = round(m["total_spend"] / m["total_ad_orders"], 2)
     else:
@@ -76,54 +108,31 @@ def extract_ads_metrics(df: pd.DataFrame) -> dict:
 
 
 def campaign_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Group by campaign_name (if available) and aggregate spend + sales.
-    """
-    group_col = None
-    for candidate in ["campaign_name", "campaign_type", "targeting", "ad_group_name"]:
-        if candidate in df.columns:
-            group_col = candidate
-            break
-
+    """Group by campaign_name and aggregate spend + sales."""
+    group_col = next(
+        (c for c in ["campaign_name", "campaign_type", "targeting", "ad_group_name"]
+         if c in df.columns),
+        None,
+    )
     if group_col is None:
         return pd.DataFrame()
 
-    agg = {}
-    for col in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]:
-        if col in df.columns:
-            agg[col] = "sum"
-
-    result = df.groupby(group_col).agg(agg).reset_index()
-    result.columns = [group_col] + [c for c in result.columns if c != group_col]
-
-    # Add derived columns
-    if "spend" in result.columns and "ad_sales" in result.columns:
-        result["acos_%"] = (result["spend"] / result["ad_sales"].replace(0, np.nan) * 100).round(2)
-        result["roas"] = (result["ad_sales"] / result["spend"].replace(0, np.nan)).round(2)
-
-    if "spend" in result.columns and "clicks" in result.columns:
-        result["cpc"] = (result["spend"] / result["clicks"].replace(0, np.nan)).round(4)
+    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
+    result = df.groupby(group_col, sort=False).agg(agg_cols).reset_index()
+    result = _add_derived_ad_cols(result)
 
     sort_col = "spend" if "spend" in result.columns else result.columns[-1]
     return result.sort_values(sort_col, ascending=False)
 
 
 def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    If the ads report has ASIN-level rows, aggregate per ASIN.
-    """
+    """Per-ASIN aggregate from the ads report."""
     if "asin" not in df.columns:
         return pd.DataFrame()
 
-    agg = {}
-    for col in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]:
-        if col in df.columns:
-            agg[col] = "sum"
-
-    result = df.groupby("asin").agg(agg).reset_index()
-    if "spend" in result.columns and "ad_sales" in result.columns:
-        result["acos_%"] = (result["spend"] / result["ad_sales"].replace(0, np.nan) * 100).round(2)
-        result["roas"] = (result["ad_sales"] / result["spend"].replace(0, np.nan)).round(2)
+    agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"] if c in df.columns}
+    result = df.groupby("asin", sort=False).agg(agg_cols).reset_index()
+    result = _add_derived_ad_cols(result)
 
     sort_col = "ad_sales" if "ad_sales" in result.columns else result.columns[-1]
     return result.sort_values(sort_col, ascending=False)
@@ -134,18 +143,19 @@ def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def extract_vendor_metrics(df: pd.DataFrame) -> dict:
-    """
-    Compute top-level aggregated metrics from the Vendor Central report.
-    """
-    m = {}
+    """Compute top-level aggregated metrics from the Vendor Central report."""
+    sum_cols = [c for c in ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"] if c in df.columns]
+    totals = df[sum_cols].sum() if sum_cols else pd.Series(dtype=float)
 
-    def col_sum(col):
-        return float(df[col].sum()) if col in df.columns else 0.0
+    def _get(col):
+        return float(totals[col]) if col in totals else 0.0
 
-    m["total_ordered_revenue"] = col_sum("ordered_revenue")
-    m["total_shipped_revenue"] = col_sum("shipped_revenue")
-    m["total_ordered_units"] = col_sum("ordered_units")
-    m["total_shipped_units"] = col_sum("shipped_units")
+    m = {
+        "total_ordered_revenue": _get("ordered_revenue"),
+        "total_shipped_revenue": _get("shipped_revenue"),
+        "total_ordered_units":   _get("ordered_units"),
+        "total_shipped_units":   _get("shipped_units"),
+    }
 
     if m["total_ordered_units"] > 0 and m["total_ordered_revenue"] > 0:
         m["avg_selling_price"] = round(m["total_ordered_revenue"] / m["total_ordered_units"], 2)
@@ -156,28 +166,19 @@ def extract_vendor_metrics(df: pd.DataFrame) -> dict:
 
 
 def asin_vendor_breakdown(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Per-ASIN revenue and units from Vendor Central.
-    """
+    """Per-ASIN revenue and units from Vendor Central."""
     if "asin" not in df.columns:
         return pd.DataFrame()
 
-    agg = {}
-    for col in ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"]:
-        if col in df.columns:
-            agg[col] = "sum"
+    agg_cols = {c: "sum" for c in ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"] if c in df.columns}
+    extra_cols = [c for c in ["product_title", "category", "brand"] if c in df.columns]
 
-    extra_cols = []
-    for col in ["product_title", "category", "brand"]:
-        if col in df.columns:
-            extra_cols.append(col)
+    result = df.groupby("asin", sort=False).agg(agg_cols).reset_index()
 
     if extra_cols:
-        first_vals = df.groupby("asin")[extra_cols].first().reset_index()
-        result = df.groupby("asin").agg(agg).reset_index()
+        # Single groupby — first() for metadata, merged in one shot
+        first_vals = df.groupby("asin", sort=False)[extra_cols].first().reset_index()
         result = result.merge(first_vals, on="asin", how="left")
-    else:
-        result = df.groupby("asin").agg(agg).reset_index()
 
     if "ordered_units" in result.columns and "ordered_revenue" in result.columns:
         result["avg_price"] = (result["ordered_revenue"] / result["ordered_units"].replace(0, np.nan)).round(2)
@@ -191,21 +192,16 @@ def asin_vendor_breakdown(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def merge_asin_view(ads_asin_df: pd.DataFrame, vendor_asin_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Join Ads ASIN data with Vendor ASIN data for a blended per-ASIN view.
-    """
+    """Join Ads ASIN data with Vendor ASIN data for a blended per-ASIN view."""
     if ads_asin_df.empty and vendor_asin_df.empty:
         return pd.DataFrame()
-
     if ads_asin_df.empty:
         return vendor_asin_df
-
     if vendor_asin_df.empty:
         return ads_asin_df
 
     merged = pd.merge(ads_asin_df, vendor_asin_df, on="asin", how="outer", suffixes=("_ads", "_vendor"))
 
-    # Total ACOS against ordered revenue (not just ad-attributed sales)
     if "spend" in merged.columns and "ordered_revenue" in merged.columns:
         merged["tacos_%"] = (
             merged["spend"] / merged["ordered_revenue"].replace(0, np.nan) * 100

@@ -449,6 +449,63 @@ st.markdown("""
 
 
 # ---------------------------------------------------------------------------
+# Module-level cached functions
+# (MUST be at module level — defining @st.cache_data inside a function
+#  creates a new cache object on every rerun, completely defeating caching)
+# ---------------------------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def _load_ads(file):
+    """Parse Amazon Ads report + extract metrics. Cached by file identity."""
+    df = parse_amazon_ads_report(file)
+    metrics = extract_ads_metrics(df)
+    return df, metrics
+
+
+@st.cache_data(show_spinner=False)
+def _load_vendor(file):
+    """Parse Vendor Central report + extract metrics. Cached by file identity."""
+    df = parse_vendor_central_report(file)
+    metrics = extract_vendor_metrics(df)
+    return df, metrics
+
+
+@st.cache_data(show_spinner=False)
+def _compute_breakdowns(ads_df, vendor_df):
+    """
+    All heavy breakdown computations in one cached call.
+    Re-runs only when ads_df or vendor_df actually changes.
+    """
+    _ads = ads_df if ads_df is not None else pd.DataFrame()
+    _ven = vendor_df if vendor_df is not None else None
+    return {
+        "campaign_df":    campaign_breakdown(_ads),
+        "asin_ads_df":    asin_ads_breakdown(_ads),
+        "asin_vendor_df": asin_vendor_breakdown(_ven) if _ven is not None else pd.DataFrame(),
+        "st_insights":    search_term_analysis(_ads),
+        "wasted":         wasted_spend_summary(_ads),
+        "match_df":       match_type_analysis(_ads),
+        "prod_intel":     product_intelligence(_ads),
+        "bid_df":         bid_strategy_analysis(_ads),
+        "ad_prod_df":     ad_product_analysis(_ads),
+        "trend_df":       build_trend_df(_ads, freq="M"),
+        "prod_trend_df":  ad_product_trend(_ads, freq="M"),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def _cached_merge_asin(asin_ads_df, asin_vendor_df):
+    """Merge ads + vendor ASIN views. Cached separately (small, fast)."""
+    return merge_asin_view(asin_ads_df, asin_vendor_df)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_trend_summary(trend_df):
+    """Cached trend summary — trend_df only changes when file changes."""
+    return trend_summary(trend_df)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -2436,41 +2493,11 @@ def main():
         """, unsafe_allow_html=True)
         return
 
-    # ---- Parse files (cached so slider changes don't re-parse) -------------
+    # ---- Parse files (module-level cache — never re-parsed on slider changes) --
     ads_df = None
     vendor_df = None
     ads_metrics = {}
     vendor_metrics = {}
-
-    @st.cache_data(show_spinner=False)
-    def _load_ads(file):
-        df = parse_amazon_ads_report(file)
-        metrics = extract_ads_metrics(df)
-        return df, metrics
-
-    @st.cache_data(show_spinner=False)
-    def _load_vendor(file):
-        df = parse_vendor_central_report(file)
-        metrics = extract_vendor_metrics(df)
-        return df, metrics
-
-    @st.cache_data(show_spinner=False)
-    def _compute_breakdowns(ads_df, vendor_df):
-        _ads = ads_df if ads_df is not None else pd.DataFrame()
-        _ven = vendor_df if vendor_df is not None else None
-        return {
-            "campaign_df":    campaign_breakdown(_ads),
-            "asin_ads_df":    asin_ads_breakdown(_ads),
-            "asin_vendor_df": asin_vendor_breakdown(_ven) if _ven is not None else pd.DataFrame(),
-            "st_insights":    search_term_analysis(_ads),
-            "wasted":         wasted_spend_summary(_ads),
-            "match_df":       match_type_analysis(_ads),
-            "prod_intel":     product_intelligence(_ads),
-            "bid_df":         bid_strategy_analysis(_ads),
-            "ad_prod_df":     ad_product_analysis(_ads),
-            "trend_df":       build_trend_df(_ads, freq="M"),
-            "prod_trend_df":  ad_product_trend(_ads, freq="M"),
-        }
 
     with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds..."):
         if ads_file:
@@ -2503,12 +2530,12 @@ def main():
         st.error("Could not load any reports. Please check file formats and try again.")
         return
 
-    # ---- Pre-compute breakdowns (cached) ----------------------------------
+    # ---- Pre-compute breakdowns (module-level cache — never re-run on slider changes) --
     bd = _compute_breakdowns(ads_df, vendor_df)
     campaign_df    = bd["campaign_df"]
     asin_ads_df    = bd["asin_ads_df"]
     asin_vendor_df = bd["asin_vendor_df"]
-    merged_asin_df = merge_asin_view(asin_ads_df, asin_vendor_df)
+    merged_asin_df = _cached_merge_asin(asin_ads_df, asin_vendor_df)
     st_insights    = bd["st_insights"]
     wasted         = bd["wasted"]
     match_df       = bd["match_df"]
@@ -2516,7 +2543,7 @@ def main():
     bid_df         = bd["bid_df"]
     ad_prod_df     = bd["ad_prod_df"]
     trend_df       = bd["trend_df"]
-    t_summary      = trend_summary(trend_df)
+    t_summary      = _cached_trend_summary(trend_df)
     prod_trend_df  = bd["prod_trend_df"]
 
     # ---- Tabs ---------------------------------------------------------------
