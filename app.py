@@ -41,7 +41,8 @@ from pages.tab_trend           import render_trend_tab
 from pages.tab_forecast        import render_forecast
 from pages.tab_recommendations import render_recommendations
 from pages.tab_logic           import render_logic_tab
-from pages.tab_intelligence    import render_intelligence_tab
+from pages.tab_intelligence    import render_intelligence_tab, _compute_asin_health
+from pages.tab_copilot         import render_copilot_tab
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -897,13 +898,17 @@ def main():
     t_summary      = _cached_trend_summary(trend_df)
     prod_trend_df  = bd["prod_trend_df"]
 
+    # ── Pre-compute health scores (used by Intelligence + Copilot + Export) ─
+    health_df = _compute_asin_health(asin_ads_df, merged_asin_df)
+
     # ── Tabs ────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Key Metrics",
         "📦 Product Intelligence",
         "📅 Trend Analysis",
         "📈 Forecast & Media Plan",
         "🧠 Amazon Intelligence",
+        "🤖 AI Copilot",
         "💡 Recommendations",
         "⚙️ How It Works",
     ])
@@ -935,9 +940,18 @@ def main():
         )
 
     with tab6:
-        render_recommendations(ads_metrics, vendor_metrics, scenarios)
+        render_copilot_tab(
+            ads_metrics=ads_metrics,
+            vendor_metrics=vendor_metrics,
+            scenarios=scenarios,
+            campaign_df=campaign_df,
+            health_df=health_df if not health_df.empty else None,
+        )
 
     with tab7:
+        render_recommendations(ads_metrics, vendor_metrics, scenarios)
+
+    with tab8:
         render_logic_tab()
 
     # ── Download ─────────────────────────────────────────────────────────────
@@ -946,15 +960,19 @@ def main():
     col_dl, col_info = st.columns([1, 3])
     with col_dl:
         try:
+            # Collect last-rendered monthly_df if available in session state
+            _monthly_export = st.session_state.get("last_monthly_df")
             excel_bytes = build_excel_media_plan(
                 ads_metrics=ads_metrics,
                 vendor_metrics=vendor_metrics,
                 scenarios=scenarios if scenarios else [],
                 campaign_df=campaign_df,
                 asin_merged_df=merged_asin_df,
+                health_df=health_df if not health_df.empty else None,
+                monthly_df=_monthly_export,
             )
             st.download_button(
-                label="⬇️  Download Excel Media Plan",
+                label="⬇️  Download Excel Media Plan (7 sheets)",
                 data=excel_bytes,
                 file_name="media_plan_forecast.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -964,12 +982,14 @@ def main():
 
     with col_info:
         st.markdown("""
-        The downloaded workbook includes:
+        The downloaded workbook includes **7 sheets**:
         - **Executive Summary** — all key metrics at a glance
-        - **Scenarios Sheet** — full scenario comparison table
+        - **Scenarios** — full scenario comparison table
         - **Campaign Recommendations** — per-campaign budget actions
         - **Campaign Performance** — detailed campaign data
         - **ASIN Analysis** — blended ads + vendor view per ASIN
+        - **ASIN Health Scores** *(Phase 5)* — tier-colour-coded health scorecard
+        - **Monthly Media Plan** *(Phase 5)* — 12-month spend calendar with event highlights
         """)
 
     # ── Footer ───────────────────────────────────────────────────────────────

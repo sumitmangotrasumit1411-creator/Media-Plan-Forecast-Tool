@@ -498,6 +498,9 @@ def render_forecast(
     else:
         monthly_df, actuals_year_from_forecast = _mf_result, 0
 
+    # Persist for Excel export (accessed via st.session_state in app.py)
+    st.session_state["last_monthly_df"] = monthly_df
+
     # Event legend
     event_months = monthly_df[monthly_df["Is Event Month"] == True]
     if not event_months.empty:
