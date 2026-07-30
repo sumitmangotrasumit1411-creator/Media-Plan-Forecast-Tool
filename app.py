@@ -143,19 +143,41 @@ button[data-testid="collapsedControl"]:hover {
 [data-testid="stSidebar"] hr {
     border: none !important; border-top: 1px solid rgba(99,102,241,0.3) !important; margin: 8px 0 !important;
 }
+/* ── Sidebar: ALL input variants — ensures typed numbers are visible ─── */
 [data-testid="stSidebar"] input[type="number"],
-[data-testid="stSidebar"] input[type="text"] {
-    background: rgba(255,255,255,0.12) !important; color: #ffffff !important;
-    border: 1px solid rgba(99,102,241,0.4) !important; border-radius: 8px !important;
+[data-testid="stSidebar"] input[type="text"],
+[data-testid="stSidebar"] input {
+    background: rgba(255,255,255,0.14) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(99,102,241,0.4) !important;
+    border-radius: 8px !important;
+    caret-color: #ffffff !important;
 }
 [data-testid="stSidebar"] input[type="number"]:focus,
-[data-testid="stSidebar"] input[type="text"]:focus {
-    background: rgba(255,255,255,0.18) !important; border-color: #818cf8 !important;
+[data-testid="stSidebar"] input[type="text"]:focus,
+[data-testid="stSidebar"] input:focus {
+    background: rgba(255,255,255,0.20) !important;
+    border-color: #818cf8 !important;
     box-shadow: 0 0 0 2px rgba(79,70,229,0.3) !important;
+    color: #ffffff !important;
+}
+/* BaseWeb Input wrapper — catches Streamlit 1.35+ number input */
+[data-testid="stSidebar"] [data-baseweb="input"] {
+    background: rgba(255,255,255,0.10) !important;
+    border-radius: 8px !important;
 }
 [data-testid="stSidebar"] [data-testid="stNumberInput"] input,
-[data-testid="stSidebar"] [data-baseweb="input"] input {
-    background: rgba(255,255,255,0.12) !important; color: #ffffff !important;
+[data-testid="stSidebar"] [data-baseweb="input"] input,
+[data-testid="stSidebar"] [data-baseweb="input"] input:focus {
+    background: transparent !important;
+    color: #ffffff !important;
+    caret-color: #ffffff !important;
+}
+/* Slider value labels */
+[data-testid="stSidebar"] [data-testid="stTickBar"] *,
+[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] span,
+[data-testid="stSidebar"] [data-baseweb="slider"] [data-testid="stThumbValue"] {
+    color: #ffffff !important;
 }
 [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"],
 [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"],
@@ -987,14 +1009,11 @@ def main():
     health_df = _compute_asin_health(asin_ads_df, merged_asin_df)
 
     # ── Tabs ────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Key Metrics",
         "📦 Product Intelligence",
         "📅 Trend Analysis",
         "📈 Forecast & Media Plan",
-        "🧠 Amazon Intelligence",
-        "🤖 AI Copilot",
-        "💡 Recommendations",
         "⚙️ How It Works",
     ])
 
@@ -1002,8 +1021,6 @@ def main():
         render_metrics_dashboard(ads_metrics, vendor_metrics)
 
     with tab2:
-        # Lazy-load: product_intelligence + search_term_analysis are heavy
-        # on 1M rows. Only computed when this tab is actually opened.
         _prod_intel  = _cached_product_intelligence(ads_df) if ads_df is not None else {}
         _st_insights = _cached_search_term_analysis(ads_df) if ads_df is not None else {}
         render_product_tab(_prod_intel, ad_prod_df, bid_df, match_df)
@@ -1020,27 +1037,6 @@ def main():
             )
 
     with tab5:
-        render_intelligence_tab(
-            asin_ads_df=asin_ads_df,
-            merged_asin_df=merged_asin_df,
-            campaign_df=campaign_df,
-            ads_metrics=ads_metrics,
-            scenarios=scenarios,
-        )
-
-    with tab6:
-        render_copilot_tab(
-            ads_metrics=ads_metrics,
-            vendor_metrics=vendor_metrics,
-            scenarios=scenarios,
-            campaign_df=campaign_df,
-            health_df=health_df if not health_df.empty else None,
-        )
-
-    with tab7:
-        render_recommendations(ads_metrics, vendor_metrics, scenarios)
-
-    with tab8:
         render_logic_tab()
 
     # ── Download ─────────────────────────────────────────────────────────────

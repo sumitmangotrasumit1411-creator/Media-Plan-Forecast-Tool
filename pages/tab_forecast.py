@@ -575,30 +575,6 @@ def render_forecast(
         "Share (%)":              "{:.1f}%",
     }), use_container_width=True, height=160)
 
-    # ── Campaign-level recommendations ─────────────────────────────────────────
-    if primary.get("campaign_recommendations"):
-        st.markdown('<div class="section-header">🎯 Campaign-Level Budget Recommendations</div>', unsafe_allow_html=True)
-        cr_df      = pd.DataFrame(primary["campaign_recommendations"])
-        display_cr = cr_df.copy()
-        display_cr.columns = [c.replace("_", " ").title() for c in display_cr.columns]
-
-        for idx, row in display_cr.iterrows():
-            incr = row.get("Suggested Increase") or 0
-            roas = row.get("Roas") or "N/A"
-            acos = row.get("Acos Pct") or "N/A"
-            name = row.get("Campaign") or f"Campaign {idx + 1}"
-            roas_str = f"{roas:.2f}x" if isinstance(roas, (int, float)) else str(roas)
-            acos_str = f"{acos:.1f}%" if isinstance(acos, (int, float)) else str(acos)
-            st.markdown(f"""
-            <div class="reco-card">
-                <strong>{name}</strong><br>
-                Current Spend: {fmt_currency(row.get('Current Spend'))} &nbsp;|&nbsp;
-                Suggested Increase: <strong>+{fmt_currency(incr)}</strong> &nbsp;|&nbsp;
-                New Budget: {fmt_currency(row.get('New Budget'))} &nbsp;|&nbsp;
-                ROAS: {roas_str} &nbsp;|&nbsp; ACOS: {acos_str}
-            </div>
-            """, unsafe_allow_html=True)
-
     # ── Monthly Media Plan ──────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown('<div class="section-header">📅 Monthly Media Plan & High-Sales Events</div>', unsafe_allow_html=True)
