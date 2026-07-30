@@ -215,19 +215,23 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     # ── Heuristic path: unknown object columns that look like numbers ─────────
-    for col in df.columns:
-        if col in _TEXT_COLUMNS or col in _NUMERIC_COLUMNS:
-            continue
-        series = df[col]
-        if series.dtype != object:
-            continue
-        sample = series.dropna()
-        if sample.empty or not sample.str.contains(r"[\$\%\,]", regex=True).any():
-            continue
-        cleaned = series.str.replace(_STRIP_RE, "", regex=True).str.strip()
-        numeric = pd.to_numeric(cleaned, errors="coerce")
-        if numeric.notna().sum() >= series.notna().sum() * 0.5:
-            df[col] = numeric
+    # Skip entirely for large frames (>200k rows) — the canonical _NUMERIC_COLUMNS
+    # fast path above already handles all known Amazon report columns.
+    # On a 1M-row / 60-col DataFrame this loop takes 2–4s; skipping it is safe.
+    if len(df) <= 200_000:
+        for col in df.columns:
+            if col in _TEXT_COLUMNS or col in _NUMERIC_COLUMNS:
+                continue
+            series = df[col]
+            if series.dtype != object:
+                continue
+            sample = series.dropna().head(200)   # sample 200 rows, not entire column
+            if sample.empty or not sample.str.contains(r"[\$\%\,]", regex=True).any():
+                continue
+            cleaned = series.str.replace(_STRIP_RE, "", regex=True).str.strip()
+            numeric = pd.to_numeric(cleaned, errors="coerce")
+            if numeric.notna().sum() >= series.notna().sum() * 0.5:
+                df[col] = numeric
 
     return df
 

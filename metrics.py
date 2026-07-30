@@ -51,13 +51,21 @@ def _add_derived_ad_cols(df: pd.DataFrame) -> pd.DataFrame:
 # DuckDB groupby helper
 # ---------------------------------------------------------------------------
 
-def _duckdb_groupby(df: pd.DataFrame, group_col: str, sum_cols: list) -> pd.DataFrame:
+def _duckdb_groupby(
+    df: pd.DataFrame,
+    group_col: str,
+    sum_cols: list,
+    _con=None,          # optional: pass an open DuckDB connection to avoid open/close overhead
+) -> pd.DataFrame:
     """
     Execute a GROUP BY + SUM via DuckDB when available.
 
     DuckDB registers the DataFrame as a virtual table (zero-copy Arrow scan)
     and runs a single multi-threaded aggregation.  The result is returned as
     a pandas DataFrame.  Falls back to pandas groupby if DuckDB raises.
+
+    Pass _con to reuse an already-open connection (avoids repeated connect()
+    overhead when calling this function many times in the same request).
     """
     if not _HAVE_DUCKDB or len(df) < _DUCKDB_THRESHOLD:
         agg = {c: "sum" for c in sum_cols if c in df.columns}
@@ -70,15 +78,81 @@ def _duckdb_groupby(df: pd.DataFrame, group_col: str, sum_cols: list) -> pd.Data
     sum_exprs = ", ".join(f'SUM("{c}") AS "{c}"' for c in cols_present)
     sql = f'SELECT "{group_col}", {sum_exprs} FROM df GROUP BY "{group_col}"'
 
+    own_con = _con is None
     try:
-        con = _duckdb.connect()
+        con = _duckdb.connect() if own_con else _con
         result = con.execute(sql).df()
-        con.close()
         return result
     except Exception:
-        # Fallback to pandas on any DuckDB error
         agg = {c: "sum" for c in cols_present}
         return df.groupby(group_col, sort=False).agg(agg).reset_index()
+    finally:
+        if own_con and _HAVE_DUCKDB:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _duckdb_all_breakdowns(df: pd.DataFrame) -> dict:
+    """
+    Run ALL DuckDB groupby operations for the ads DataFrame in a single
+    open connection — eliminates repeated connect/close overhead.
+
+    Returns a dict with keys: campaign_df, asin_df, match_df, bid_df, ad_prod_df
+    Falls back gracefully per-operation if DuckDB raises.
+    """
+    results = {}
+
+    # Columns needed across all groupbys — project to a slim frame first
+    _ALL_SUM = ["spend", "ad_sales", "impressions", "clicks", "ad_orders",
+                "ad_orders_ntb", "ad_sales_longterm"]
+    _GROUP_COLS = ["campaign_name", "campaign_type", "ad_group_name",
+                   "targeting", "asin", "match_type", "bid_strategy"]
+
+    slim_cols = list(set(
+        [c for c in _ALL_SUM if c in df.columns] +
+        [c for c in _GROUP_COLS if c in df.columns]
+    ))
+    slim = df[slim_cols] if slim_cols else df
+
+    if not _HAVE_DUCKDB or len(df) < _DUCKDB_THRESHOLD:
+        # pandas path — no connection needed
+        return results   # caller will fall through to individual functions
+
+    try:
+        con = _duckdb.connect()
+
+        # Register the slim frame once — all queries below reuse it
+        con.register("slim", slim)
+
+        _sum_cols = [c for c in _ALL_SUM if c in slim.columns]
+        _sum_exprs = ", ".join(f'SUM("{c}") AS "{c}"' for c in _sum_cols)
+
+        def _q(group_col):
+            if group_col not in slim.columns:
+                return None
+            try:
+                return con.execute(
+                    f'SELECT "{group_col}", {_sum_exprs} FROM slim GROUP BY "{group_col}"'
+                ).df()
+            except Exception:
+                return None
+
+        results["campaign_raw"] = _q(
+            next((c for c in ["campaign_name", "campaign_type", "ad_group_name", "targeting"]
+                  if c in slim.columns), None)
+        )
+        results["asin_raw"]     = _q("asin")
+        results["match_raw"]    = _q("match_type")
+        results["bid_raw"]      = _q("bid_strategy")
+        results["ad_prod_raw"]  = _q("campaign_type")
+
+        con.close()
+    except Exception:
+        pass   # caller falls back to individual pandas groupbys
+
+    return results
 
 
 # ---------------------------------------------------------------------------
