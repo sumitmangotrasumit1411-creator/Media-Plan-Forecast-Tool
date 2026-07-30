@@ -2,6 +2,24 @@
 pages/tab_forecast.py — Forecast & Media Plan tab
 Contains the full render_forecast() function extracted from app.py.
 All forecast calculations are identical — zero business logic changed.
+
+Baseline / Projected separation (business logic fix):
+------------------------------------------------------
+The uploaded reports are ALWAYS the single source of truth for every
+"Current / Actual / Baseline" value displayed in this tab.
+
+Rule: baseline_metrics are read-only. They are extracted once from
+ads_metrics / vendor_metrics and never overwritten by forecast output.
+
+The only values that change with scenario selection are the PROJECTED
+columns. Every tile, table, and chart shows:
+
+    LEFT  = Current Performance (Uploaded Data)   ← immutable baseline
+    RIGHT = Projected Performance (Forecast)       ← scenario output
+
+When no custom target is active, the first selected growth scenario
+(e.g. +10%) is used as the default projection so users always see a
+meaningful Current vs Projected comparison — never identical numbers.
 """
 
 import streamlit as st
@@ -72,34 +90,81 @@ def render_forecast(
         active_labels = " · ".join(label_map[k] for k in active)
         st.info(f"🎯 **Custom scenario active** — pinned inputs: **{active_labels}**. All other metrics derived automatically.")
 
-    # ---- Active scenario values ------------------------------------------------
-    active_spend = custom_scenario["recommended_spend"]   if custom_scenario else total_ad_spend
-    active_sales = custom_scenario["target_ad_sales"]     if custom_scenario else total_ad_sales
-    active_rev   = custom_scenario["target_revenue"]      if custom_scenario else baseline_revenue
-    active_acos  = custom_scenario["projected_acos_pct"]  if custom_scenario else (ads_metrics.get("overall_acos") or 0)
-    active_roas  = custom_scenario["projected_roas"]      if custom_scenario else (ads_metrics.get("overall_roas") or 0)
-    active_tacos = custom_scenario["projected_tacos_pct"] if custom_scenario else 0
+    # =========================================================================
+    # BASELINE METRICS — immutable, always from uploaded reports
+    # These are NEVER overwritten by any forecast output.
+    # =========================================================================
+    baseline_spend  = total_ad_spend                                   # from ads report
+    baseline_sales  = total_ad_sales                                   # from ads report
+    baseline_acos   = ads_metrics.get("overall_acos")                  # from ads report
+    baseline_roas   = ads_metrics.get("overall_roas")                  # from ads report
+    baseline_tacos  = round(total_ad_spend / baseline_revenue * 100, 2) if baseline_revenue > 0 else None
+    baseline_clicks = ads_metrics.get("total_clicks", 0)  or 0
+    baseline_impr   = ads_metrics.get("total_impressions", 0) or 0
+    baseline_orders = ads_metrics.get("total_ad_orders", 0) or 0
+    baseline_cpc    = ads_metrics.get("overall_cpc") or 0
+    baseline_ctr    = ads_metrics.get("overall_ctr") or 0
+    baseline_cvr    = ads_metrics.get("conversion_rate") or 0
+    baseline_cpo    = ads_metrics.get("cost_per_order") or 0
 
-    # Derive secondary metrics proportionally from spend ratio
-    spend_ratio  = (active_spend / total_ad_spend) if total_ad_spend > 0 else 1.0
-    curr_clicks  = ads_metrics.get("total_clicks", 0)       or 0
-    curr_impr    = ads_metrics.get("total_impressions", 0)   or 0
-    curr_orders  = ads_metrics.get("total_ad_orders", 0)     or 0
-    curr_cpc     = ads_metrics.get("overall_cpc")            or 0
-    curr_ctr     = ads_metrics.get("overall_ctr")            or 0
-    curr_cvr     = ads_metrics.get("conversion_rate")        or 0
+    # =========================================================================
+    # PROJECTED METRICS — always from forecast output, never from baseline
+    #
+    # Source priority:
+    #   1. Custom scenario (when sidebar targets are set)
+    #   2. First growth scenario (e.g. +10%) — ensures Current ≠ Projected
+    #
+    # The baseline is NEVER used as the projected value. When no scenario is
+    # selected, the first available growth scenario provides projected values.
+    # =========================================================================
+    if custom_scenario:
+        proj_scenario = custom_scenario
+    elif scenarios:
+        # Use the first growth scenario (+10% or lowest selected) as the
+        # default projection — so tiles always show a meaningful delta
+        proj_scenario = scenarios[0]
+    else:
+        proj_scenario = None
 
-    proj_clicks  = round(curr_clicks  * spend_ratio)
-    proj_impr    = round(curr_impr    * spend_ratio)
-    proj_orders  = round(curr_orders  * spend_ratio)
-    proj_cpc     = curr_cpc
-    proj_ctr     = curr_ctr
-    proj_cvr     = curr_cvr
+    if proj_scenario:
+        proj_spend  = proj_scenario["recommended_spend"]
+        proj_sales  = proj_scenario["target_ad_sales"]
+        proj_rev    = proj_scenario["target_revenue"]
+        proj_acos   = proj_scenario["projected_acos_pct"]
+        proj_roas   = proj_scenario["projected_roas"]   or 0
+        proj_tacos  = proj_scenario["projected_tacos_pct"] or 0
+        proj_alloc  = proj_scenario["channel_allocation"]
+    else:
+        # Fallback: no scenario available — show baseline on both sides
+        # (should never occur since scenarios always contain at least one entry)
+        proj_spend  = baseline_spend
+        proj_sales  = baseline_sales
+        proj_rev    = baseline_revenue
+        proj_acos   = baseline_acos or 0
+        proj_roas   = baseline_roas or 0
+        proj_tacos  = baseline_tacos or 0
+        proj_alloc  = {
+            ch: {"budget": round(baseline_spend * w, 2), "share_pct": round(w * 100, 1)}
+            for ch, w in channel_split.items()
+        }
 
-    active_alloc = custom_scenario["channel_allocation"] if custom_scenario else {
-        ch: {"budget": round(active_spend * w, 2), "share_pct": round(w * 100, 1)}
-        for ch, w in channel_split.items()
-    }
+    # Projected secondary metrics scaled by spend ratio vs BASELINE spend
+    _spend_ratio  = (proj_spend / baseline_spend) if baseline_spend > 0 else 1.0
+    proj_clicks   = round(baseline_clicks  * _spend_ratio)
+    proj_impr     = round(baseline_impr    * _spend_ratio)
+    proj_orders   = round(baseline_orders  * _spend_ratio)
+    proj_cpc      = baseline_cpc   # CPC is bid/auction driven, not spend driven
+    proj_ctr      = baseline_ctr   # CTR is creative driven, not spend driven
+    proj_cvr      = baseline_cvr   # CVR is listing driven, not spend driven
+    proj_cpo      = round(proj_spend / proj_orders, 2) if proj_orders > 0 else baseline_cpo
+
+    # Label for the active projection (used in section headers and table)
+    if custom_scenario:
+        proj_label = f"🎯 Custom (+{custom_scenario['growth_pct']:.1f}%)"
+    elif proj_scenario:
+        proj_label = f"📈 +{proj_scenario['growth_pct']:.0f}% Scenario"
+    else:
+        proj_label = "Projected"
 
     # ── Delta badge helper ──────────────────────────────────────────────────────
     def _delta_badge(new_val, old_val, higher_is_better=True, is_pct_metric=False):
@@ -163,87 +228,134 @@ def render_forecast(
             </div>
         </div>"""
 
-    # ── Hero KPI summary banner ─────────────────────────────────────────────────
-    curr_acos  = ads_metrics.get("overall_acos")
-    curr_roas  = ads_metrics.get("overall_roas")
-    curr_tacos_hero = round(total_ad_spend / baseline_revenue * 100, 2) if baseline_revenue > 0 else None
-
+    # ── Hero banner — Current Performance (Uploaded Data) ──────────────────────
     hero_items = [
-        ("Current Revenue",  fmt_currency(baseline_revenue),  "Baseline"),
-        ("Current Ad Spend", fmt_currency(total_ad_spend),    "Total spend"),
-        ("ACOS",             fmt_pct(curr_acos),              "Target ≤25%"),
-        ("ROAS",             f"{curr_roas:.2f}x" if curr_roas else "N/A", "Target ≥4x"),
-        ("TACOS",            fmt_pct(curr_tacos_hero),         "Total ad ratio"),
-        ("Ad Sales",         fmt_currency(total_ad_sales),    "Ad-attributed"),
+        ("Current Revenue",  fmt_currency(baseline_revenue),  "Uploaded data"),
+        ("Current Ad Spend", fmt_currency(baseline_spend),    "Uploaded data"),
+        ("Current ACOS",     fmt_pct(baseline_acos),          "Target ≤25%"),
+        ("Current ROAS",     f"{baseline_roas:.2f}x" if baseline_roas else "N/A", "Target ≥4x"),
+        ("Current TACOS",    fmt_pct(baseline_tacos),         "Total ad ratio"),
+        ("Current Ad Sales", fmt_currency(baseline_sales),    "Uploaded data"),
     ]
-    hero_html = '<div class="kpi-hero"><div style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">Current Baseline Performance</div><div class="kpi-hero-row">'
+    hero_html = (
+        '<div class="kpi-hero">'
+        '<div style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:700;'
+        'text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;">'
+        '📂 Current Performance — Uploaded Data (Single Source of Truth)'
+        '</div>'
+        '<div class="kpi-hero-row">'
+    )
     for label, val, sub in hero_items:
-        hero_html += f'<div class="kpi-hero-item"><div class="kpi-hero-label">{label}</div><div class="kpi-hero-value">{val}</div><div class="kpi-hero-sub">{sub}</div></div>'
+        hero_html += (
+            f'<div class="kpi-hero-item">'
+            f'<div class="kpi-hero-label">{label}</div>'
+            f'<div class="kpi-hero-value">{val}</div>'
+            f'<div class="kpi-hero-sub">{sub}</div>'
+            f'</div>'
+        )
     hero_html += "</div></div>"
     st.markdown(hero_html, unsafe_allow_html=True)
 
-    # ── Live Impact Dashboard ───────────────────────────────────────────────────
-    st.markdown('<div class="section-header">⚡ Live Impact Dashboard — All Metrics Updated</div>', unsafe_allow_html=True)
-    st.markdown("""
+    # ── Baseline validation strip ───────────────────────────────────────────────
+    # Confirms that displayed Current values match the uploaded report exactly.
+    _val_acos  = round(baseline_spend / baseline_sales * 100, 2) if baseline_sales > 0 else None
+    _val_roas  = round(baseline_sales / baseline_spend, 2)       if baseline_spend > 0 else None
+    _acos_ok   = abs((_val_acos  or 0) - (baseline_acos  or 0)) < 0.01
+    _roas_ok   = abs((_val_roas  or 0) - (baseline_roas  or 0)) < 0.01
+    _val_color = "#10b981" if (_acos_ok and _roas_ok) else "#f97316"
+    _val_icon  = "✅" if (_acos_ok and _roas_ok) else "⚠️"
+    st.markdown(f"""
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-left:4px solid {_val_color};
+                border-radius:0 10px 10px 0;padding:10px 18px;margin-bottom:20px;
+                font-size:13px;color:#166534;display:flex;gap:24px;flex-wrap:wrap;">
+        <span style="font-weight:700;">{_val_icon} Baseline Validation:</span>
+        <span>Ad Spend = <strong>{fmt_currency(baseline_spend)}</strong></span>
+        <span>Ad Sales = <strong>{fmt_currency(baseline_sales)}</strong></span>
+        <span>ACOS = <strong>{fmt_pct(_val_acos)}</strong> {"✅" if _acos_ok else "⚠️"}</span>
+        <span>ROAS = <strong>{f"{_val_roas:.2f}x" if _val_roas else "N/A"}</strong> {"✅" if _roas_ok else "⚠️"}</span>
+        <span style="color:#6b7280;font-size:12px;">— Computed directly from uploaded report</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Current vs Projected comparison tiles ──────────────────────────────────
+    st.markdown(
+        f'<div class="section-header">'
+        f'📊 Current Performance (Uploaded Data) &nbsp;→&nbsp; Projected Performance ({proj_label})'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"""
     <div class="callout-banner">
-        <strong>⚡ Live update:</strong> Every metric below recalculates instantly when you change
-        Custom Targets or Channel Budget Split in the sidebar — no page reload needed.
+        <strong>LEFT = Current (Uploaded Data)</strong> — always from your reports, never modified. &nbsp;|&nbsp;
+        <strong>RIGHT = Projected ({proj_label})</strong> — forecast output.
+        Change the scenario selector below the table to see a different projection.
     </div>
     """, unsafe_allow_html=True)
 
     r1 = st.columns(4)
-    r1[0].markdown(_metric_tile("💰 Ad Spend",       total_ad_spend,   active_spend,              fmt_currency, True),  unsafe_allow_html=True)
-    r1[1].markdown(_metric_tile("📈 Ad Sales",        total_ad_sales,  active_sales,              fmt_currency, True),  unsafe_allow_html=True)
-    r1[2].markdown(_metric_tile("🏪 Total Revenue",   baseline_revenue, active_rev,               fmt_currency, True),  unsafe_allow_html=True)
-    r1[3].markdown(_metric_tile("💹 Revenue Gap",     0,                active_rev - baseline_revenue, fmt_currency, True), unsafe_allow_html=True)
-
-    curr_tacos          = round(total_ad_spend / baseline_revenue * 100, 2) if baseline_revenue > 0 else None
-    proj_cost_per_order = round(active_spend / proj_orders, 2) if proj_orders > 0 else (ads_metrics.get("cost_per_order") or 0)
+    r1[0].markdown(_metric_tile("💰 Ad Spend",     baseline_spend,   proj_spend,  fmt_currency, True),  unsafe_allow_html=True)
+    r1[1].markdown(_metric_tile("📈 Ad Sales",      baseline_sales,   proj_sales,  fmt_currency, True),  unsafe_allow_html=True)
+    r1[2].markdown(_metric_tile("🏪 Total Revenue", baseline_revenue, proj_rev,    fmt_currency, True),  unsafe_allow_html=True)
+    r1[3].markdown(_metric_tile("💹 Revenue Gap",   0, proj_rev - baseline_revenue, fmt_currency, True), unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     r2 = st.columns(4)
-    r2[0].markdown(_metric_tile("🎯 ACOS",      ads_metrics.get("overall_acos"),   active_acos,         fmt_pct,                           False, True),  unsafe_allow_html=True)
-    r2[1].markdown(_metric_tile("⚡ ROAS",       ads_metrics.get("overall_roas"),   active_roas,         lambda v: f"{v:.2f}x" if v else "—", True,  False), unsafe_allow_html=True)
-    r2[2].markdown(_metric_tile("📊 TACOS",      curr_tacos,                        active_tacos,        fmt_pct,                           False, True),  unsafe_allow_html=True)
-    r2[3].markdown(_metric_tile("💵 Cost/Order", ads_metrics.get("cost_per_order"), proj_cost_per_order, fmt_currency,                      False, False), unsafe_allow_html=True)
+    r2[0].markdown(_metric_tile("🎯 ACOS",      baseline_acos,   proj_acos,  fmt_pct,                           False, True),  unsafe_allow_html=True)
+    r2[1].markdown(_metric_tile("⚡ ROAS",       baseline_roas,   proj_roas,  lambda v: f"{v:.2f}x" if v else "—", True,  False), unsafe_allow_html=True)
+    r2[2].markdown(_metric_tile("📊 TACOS",      baseline_tacos,  proj_tacos, fmt_pct,                           False, True),  unsafe_allow_html=True)
+    r2[3].markdown(_metric_tile("💵 Cost/Order", baseline_cpo,    proj_cpo,   fmt_currency,                      False, False), unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     r3 = st.columns(4)
-    r3[0].markdown(_metric_tile("👁️ Impressions", curr_impr,   proj_impr,   fmt_num,      True),  unsafe_allow_html=True)
-    r3[1].markdown(_metric_tile("🖱️ Clicks",      curr_clicks, proj_clicks, fmt_num,      True),  unsafe_allow_html=True)
-    r3[2].markdown(_metric_tile("🛒 Ad Orders",   curr_orders, proj_orders, fmt_num,      True),  unsafe_allow_html=True)
-    r3[3].markdown(_metric_tile("💲 CPC",         curr_cpc,    proj_cpc,    fmt_currency, False), unsafe_allow_html=True)
+    r3[0].markdown(_metric_tile("👁️ Impressions", baseline_impr,   proj_impr,   fmt_num,      True),  unsafe_allow_html=True)
+    r3[1].markdown(_metric_tile("🖱️ Clicks",      baseline_clicks, proj_clicks, fmt_num,      True),  unsafe_allow_html=True)
+    r3[2].markdown(_metric_tile("🛒 Ad Orders",   baseline_orders, proj_orders, fmt_num,      True),  unsafe_allow_html=True)
+    r3[3].markdown(_metric_tile("💲 CPC",         baseline_cpc,    proj_cpc,    fmt_currency, False), unsafe_allow_html=True)
 
-    # Channel split tiles
-    st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
+    # Projected channel split tiles (right-hand side only — no "current" channel breakdown available)
+    st.markdown(
+        f'<div class="section-header">💰 Projected Channel Budget — {proj_label}</div>',
+        unsafe_allow_html=True,
+    )
     ch_palette = {"Sponsored Products": "#4f46e5", "Sponsored Brands": "#f97316", "Sponsored Display": "#10b981"}
     ch_cols = st.columns(3)
-    for col, (ch_name, alloc_data) in zip(ch_cols, active_alloc.items()):
+    for col, (ch_name, alloc_data) in zip(ch_cols, proj_alloc.items()):
         color  = ch_palette.get(ch_name, "#6b7280")
         budget = alloc_data.get("budget", 0)
         share  = alloc_data.get("share_pct", 0)
+        incr   = alloc_data.get("incremental_budget", 0)
         with col:
             col.markdown(f"""
             <div style="background:#ffffff;border-top:4px solid {color};border-radius:10px;
                         padding:14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
                 <div style="font-size:12px;font-weight:800;color:{color};">{ch_name}</div>
                 <div style="font-size:24px;font-weight:900;color:#1e1b4b;margin:6px 0;">{fmt_currency(budget)}</div>
-                <div style="font-size:13px;color:#6b7280;">{share:.1f}% of total budget</div>
+                <div style="font-size:13px;color:#6b7280;">{share:.1f}% of projected budget</div>
+                <div style="font-size:12px;font-weight:700;color:{color};margin-top:4px;">
+                    +{fmt_currency(incr)} incremental</div>
             </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
 
     # ── Scenario Comparison Table ───────────────────────────────────────────────
+    # The "Current" row always uses BASELINE values (uploaded report).
+    # ACOS and ROAS in the current row are labelled "Current" not "Projected".
     current_row = pd.DataFrame([{
-        "Growth Target":         "✅ Current (Achieved)",
-        "Target Revenue ($)":    baseline_revenue,
-        "Revenue Gap ($)":       0.0,
-        "Rec. Ad Spend ($)":     total_ad_spend,
-        "Incremental Spend ($)": 0.0,
-        "Projected ACOS (%)":    ads_metrics.get("overall_acos") or 0,
-        "Projected ROAS":        ads_metrics.get("overall_roas") or 0,
-        "Projected TACOS (%)":   0.0,
-        "Target Ad Sales ($)":   total_ad_sales,
+        "Growth Target":              "📂 Current (Uploaded Data)",
+        "Current Revenue ($)":        baseline_revenue,
+        "Current Ad Spend ($)":       baseline_spend,
+        "Current Ad Sales ($)":       baseline_sales,
+        "Current ACOS (%)":           baseline_acos or 0,
+        "Current ROAS":               baseline_roas or 0,
+        "Current TACOS (%)":          baseline_tacos or 0,
+        "Revenue Gap ($)":            0.0,
+        "Projected Ad Spend ($)":     baseline_spend,
+        "Incremental Spend ($)":      0.0,
+        "Projected ACOS (%)":         baseline_acos or 0,
+        "Projected ROAS":             baseline_roas or 0,
+        "Projected TACOS (%)":        baseline_tacos or 0,
+        "Projected Ad Sales ($)":     baseline_sales,
+        "Projected Revenue ($)":      baseline_revenue,
     }])
 
     custom_row = None
@@ -251,20 +363,45 @@ def render_forecast(
     if custom_scenario:
         cs_label = f"🎯 Custom ({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)"
         custom_row = pd.DataFrame([{
-            "Growth Target":         cs_label,
-            "Target Revenue ($)":    custom_scenario["target_revenue"],
-            "Revenue Gap ($)":       custom_scenario["revenue_gap"],
-            "Rec. Ad Spend ($)":     custom_scenario["recommended_spend"],
-            "Incremental Spend ($)": custom_scenario["incremental_spend"],
-            "Projected ACOS (%)":    custom_scenario["projected_acos_pct"] or 0,
-            "Projected ROAS":        custom_scenario["projected_roas"]     or 0,
-            "Projected TACOS (%)":   custom_scenario["projected_tacos_pct"] or 0,
-            "Target Ad Sales ($)":   custom_scenario["target_ad_sales"],
+            "Growth Target":              cs_label,
+            "Current Revenue ($)":        baseline_revenue,
+            "Current Ad Spend ($)":       baseline_spend,
+            "Current Ad Sales ($)":       baseline_sales,
+            "Current ACOS (%)":           baseline_acos or 0,
+            "Current ROAS":               baseline_roas or 0,
+            "Current TACOS (%)":          baseline_tacos or 0,
+            "Revenue Gap ($)":            custom_scenario["revenue_gap"],
+            "Projected Ad Spend ($)":     custom_scenario["recommended_spend"],
+            "Incremental Spend ($)":      custom_scenario["incremental_spend"],
+            "Projected ACOS (%)":         custom_scenario["projected_acos_pct"] or 0,
+            "Projected ROAS":             custom_scenario["projected_roas"]     or 0,
+            "Projected TACOS (%)":        custom_scenario["projected_tacos_pct"] or 0,
+            "Projected Ad Sales ($)":     custom_scenario["target_ad_sales"],
+            "Projected Revenue ($)":      custom_scenario["target_revenue"],
         }])
 
-    st.markdown('<div class="section-header">📋 Scenario Comparison</div>', unsafe_allow_html=True)
-    sc_df = scenarios_to_dataframe(scenarios)
-    sc_df["Target Ad Sales ($)"] = [s["target_ad_sales"] for s in scenarios]
+    st.markdown('<div class="section-header">📋 Scenario Comparison — Current (Uploaded Data) vs Projected</div>', unsafe_allow_html=True)
+    # Build scenario rows — each includes both baseline (Current) and projected cols
+    sc_rows = []
+    for s in scenarios:
+        sc_rows.append({
+            "Growth Target":              f"+{s['growth_pct']:.0f}%",
+            "Current Revenue ($)":        baseline_revenue,
+            "Current Ad Spend ($)":       baseline_spend,
+            "Current Ad Sales ($)":       baseline_sales,
+            "Current ACOS (%)":           baseline_acos or 0,
+            "Current ROAS":               baseline_roas or 0,
+            "Current TACOS (%)":          baseline_tacos or 0,
+            "Revenue Gap ($)":            s["revenue_gap"],
+            "Projected Revenue ($)":      s["target_revenue"],
+            "Projected Ad Spend ($)":     s["recommended_spend"],
+            "Projected Ad Sales ($)":     s["target_ad_sales"],
+            "Incremental Spend ($)":      s["incremental_spend"],
+            "Projected ACOS (%)":         s["projected_acos_pct"],
+            "Projected ROAS":             s["projected_roas"],
+            "Projected TACOS (%)":        s["projected_tacos_pct"],
+        })
+    sc_df = pd.DataFrame(sc_rows)
 
     parts = [current_row]
     if custom_row is not None:
@@ -273,27 +410,38 @@ def render_forecast(
     full_df = pd.concat(parts, ignore_index=True)
 
     col_order = [
-        "Growth Target", "Target Revenue ($)", "Target Ad Sales ($)",
-        "Revenue Gap ($)", "Rec. Ad Spend ($)", "Incremental Spend ($)",
+        "Growth Target",
+        # ── Current (Uploaded Data) ──
+        "Current Revenue ($)", "Current Ad Spend ($)", "Current Ad Sales ($)",
+        "Current ACOS (%)", "Current ROAS", "Current TACOS (%)",
+        # ── Projected (Forecast) ──
+        "Revenue Gap ($)", "Projected Revenue ($)", "Projected Ad Spend ($)",
+        "Projected Ad Sales ($)", "Incremental Spend ($)",
         "Projected ACOS (%)", "Projected ROAS", "Projected TACOS (%)",
     ]
     full_df = full_df[[c for c in col_order if c in full_df.columns]]
 
     fmt = {
-        "Target Revenue ($)":    "${:,.0f}",
-        "Target Ad Sales ($)":   "${:,.0f}",
-        "Revenue Gap ($)":       "${:,.0f}",
-        "Rec. Ad Spend ($)":     "${:,.0f}",
-        "Incremental Spend ($)": "${:,.0f}",
-        "Projected ACOS (%)":    "{:.2f}%",
-        "Projected ROAS":        "{:.2f}x",
-        "Projected TACOS (%)":   "{:.2f}%",
+        "Current Revenue ($)":    "${:,.0f}",
+        "Current Ad Spend ($)":   "${:,.0f}",
+        "Current Ad Sales ($)":   "${:,.0f}",
+        "Current ACOS (%)":       "{:.2f}%",
+        "Current ROAS":           "{:.2f}x",
+        "Current TACOS (%)":      "{:.2f}%",
+        "Revenue Gap ($)":        "${:,.0f}",
+        "Projected Revenue ($)":  "${:,.0f}",
+        "Projected Ad Spend ($)": "${:,.0f}",
+        "Projected Ad Sales ($)": "${:,.0f}",
+        "Incremental Spend ($)":  "${:,.0f}",
+        "Projected ACOS (%)":     "{:.2f}%",
+        "Projected ROAS":         "{:.2f}x",
+        "Projected TACOS (%)":    "{:.2f}%",
     }
 
     def _row_style(row):
-        if row["Growth Target"] == "✅ Current (Achieved)":
+        if str(row.get("Growth Target", "")).startswith("📂 Current"):
             return ["background-color:#f0fdf4; font-weight:700"] * len(row)
-        if str(row["Growth Target"]).startswith("🎯 Custom"):
+        if str(row.get("Growth Target", "")).startswith("🎯 Custom"):
             return ["background-color:#eff6ff; font-weight:700; color:#1d4ed8"] * len(row)
         return [""] * len(row)
 
@@ -303,11 +451,11 @@ def render_forecast(
     )
 
     # ── Revenue vs Spend chart ──────────────────────────────────────────────────
-    st.markdown('<div class="section-header">📈 Revenue vs Recommended Spend by Scenario</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📈 Current vs Projected Revenue & Spend by Scenario</div>', unsafe_allow_html=True)
 
-    chart_labels     = ["Current"]
+    chart_labels     = ["📂 Current\n(Uploaded)"]
     chart_revenue    = [baseline_revenue]
-    chart_spend      = [total_ad_spend]
+    chart_spend      = [baseline_spend]
     bar_colors_rev   = ["#6b7280"]
     bar_colors_spend = ["#9ca3af"]
 
@@ -338,9 +486,9 @@ def render_forecast(
     st.plotly_chart(fig, use_container_width=True)
 
     # ── ACOS & ROAS line charts ─────────────────────────────────────────────────
-    acos_labels        = ["Current"]
-    acos_values        = [ads_metrics.get("overall_acos") or 0]
-    roas_values        = [ads_metrics.get("overall_roas") or 0]
+    acos_labels        = ["📂 Current\n(Uploaded)"]
+    acos_values        = [baseline_acos or 0]
+    roas_values        = [baseline_roas or 0]
     acos_marker_colors = ["#9ca3af"]
     roas_marker_colors = ["#9ca3af"]
 
@@ -386,7 +534,7 @@ def render_forecast(
     # ── Channel Allocation ──────────────────────────────────────────────────────
     primary       = custom_scenario if custom_scenario else next((s for s in scenarios if s["growth_pct"] == 10), scenarios[0])
     primary_label = "Custom" if custom_scenario else f"+{primary['growth_pct']}%"
-    st.markdown(f'<div class="section-header">💰 Channel Budget Allocation — {primary_label} Scenario</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-header">💰 Projected Channel Budget Allocation — {primary_label} Scenario</div>', unsafe_allow_html=True)
 
     alloc_labels  = list(primary["channel_allocation"].keys())
     alloc_budgets = [v["budget"]             for v in primary["channel_allocation"].values()]
