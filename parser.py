@@ -236,53 +236,74 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
 # CSV reader — PyArrow fast path with C-engine fallback
 # ---------------------------------------------------------------------------
 
-def _read_csv_fast(file_obj: io.IOBase, encoding: str = "utf-8") -> pd.DataFrame:
+def _read_csv_c(file_obj, encoding: str) -> pd.DataFrame:
+    """Read CSV with the pandas C engine (chunked to keep peak memory bounded)."""
+    kwargs = dict(
+        dtype=str,
+        low_memory=False,
+        na_values=["", "N/A", "n/a", "--", "—"],
+        keep_default_na=False,
+    )
+    chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
+    return pd.concat(list(chunks), ignore_index=True, copy=False)
+
+
+def _read_csv_fast(file_obj, encoding: str = "utf-8") -> pd.DataFrame:
     """
-    Read a CSV using the PyArrow engine when available (3-10x faster on large files).
+    Try the PyArrow engine first (3-10x faster); fall back to the C engine on
+    any failure (encoding issues, BOM markers, structural quirks in Amazon exports).
 
-    PyArrow advantages for this workload:
-    - Multi-threaded tokenizer: uses all CPU cores for the scan phase
-    - Zero-copy column materialization into pandas Series
-    - Handles 400MB+ files without intermediate Python allocation
-
-    Falls back to the C engine if pyarrow is not installed.
+    PyArrow is strict about encodings — it rejects files with BOM or Windows
+    code-page characters that the C engine handles transparently.  The fallback
+    ensures we always load the file successfully.
     """
     kwargs = dict(
-        dtype=str,           # read all cols as string; numeric conversion done by _clean_numeric
+        dtype=str,
         low_memory=False,
         na_values=["", "N/A", "n/a", "--", "—"],
         keep_default_na=False,
     )
     if _HAVE_PYARROW:
-        kwargs["engine"] = "pyarrow"
-        # PyArrow engine doesn't support chunksize — reads the whole file in one shot
-        # which is actually faster because it avoids N pd.concat calls
-        return pd.read_csv(file_obj, encoding=encoding, **kwargs)
-    else:
-        # C engine fallback: chunked to keep peak memory bounded
-        chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
-        return pd.concat(chunks, ignore_index=True, copy=False)
+        try:
+            return pd.read_csv(file_obj, encoding=encoding, engine="pyarrow", **kwargs)
+        except Exception:
+            # PyArrow failed (encoding, BOM, structural issue) — rewind and use C engine
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
+    # C engine: chunked reads to keep peak RAM bounded on 400MB+ files
+    return _read_csv_c(file_obj, encoding)
 
 
 def _read_file(uploaded_file) -> pd.DataFrame:
     """
     Read an uploaded Streamlit file object (CSV or XLSX) into a DataFrame.
 
-    Phase 3: uses the PyArrow engine for CSV and reads directly from the
-    file object buffer instead of copying all bytes into memory first.
+    Encoding ladder: utf-8-sig (handles BOM) → utf-8 → latin-1 → cp1252.
+    Each attempt uses PyArrow first, then C engine.  The first successful
+    parse is returned.
     """
     name = uploaded_file.name.lower()
 
     if name.endswith(".csv"):
-        # Streamlit UploadedFile is a seekable BytesIO-compatible buffer.
-        # We try encodings in order; rewind between attempts.
-        for enc in ("utf-8", "latin-1", "cp1252"):
+        # utf-8-sig strips BOM automatically; covers the majority of Amazon exports
+        for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
             try:
                 uploaded_file.seek(0)
                 return _read_csv_fast(uploaded_file, encoding=enc)
-            except Exception:
+            except UnicodeDecodeError:
                 continue
-        raise ValueError("Could not decode CSV file with any supported encoding.")
+            except Exception as exc:
+                # Non-encoding error on C engine path — try next encoding,
+                # but if this is the last one, let it propagate
+                last_exc = exc
+                continue
+        raise ValueError(
+            "Could not decode CSV file. "
+            "Tried utf-8-sig, utf-8, latin-1, cp1252. "
+            "Re-export from Amazon Ads Console as UTF-8 and try again."
+        )
 
     elif name.endswith((".xlsx", ".xls")):
         raw = uploaded_file.read()
