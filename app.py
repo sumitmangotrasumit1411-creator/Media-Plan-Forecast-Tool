@@ -136,49 +136,54 @@ button[data-testid="collapsedControl"]:hover {
     background: linear-gradient(180deg, #0f0c29 0%, #1e1b4b 35%, #24225a 70%, #2d1b69 100%) !important;
     border-right: 1px solid rgba(99,102,241,0.25) !important;
 }
-[data-testid="stSidebar"] * { color: #e0e7ff !important; }
+
+/* Nuclear rule: every element inside the sidebar is white text.
+   This is the only reliable fix across all Streamlit versions because
+   BaseWeb input value nodes change their DOM tag between releases. */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] *,
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] input *,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div,
+[data-testid="stSidebar"] label {
+    color: #ffffff !important;
+    caret-color: #ffffff !important;
+}
+
 [data-testid="stSidebar"] .stMarkdown h1,
 [data-testid="stSidebar"] .stMarkdown h2,
-[data-testid="stSidebar"] .stMarkdown h3 { color: #ffffff !important; font-size: 12px !important; text-transform: uppercase; letter-spacing: 1px; }
+[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #ffffff !important; font-size: 12px !important;
+    text-transform: uppercase; letter-spacing: 1px;
+}
 [data-testid="stSidebar"] hr {
     border: none !important; border-top: 1px solid rgba(99,102,241,0.3) !important; margin: 8px 0 !important;
 }
-/* ── Sidebar: ALL input variants — ensures typed numbers are visible ─── */
-[data-testid="stSidebar"] input[type="number"],
-[data-testid="stSidebar"] input[type="text"],
-[data-testid="stSidebar"] input {
-    background: rgba(255,255,255,0.14) !important;
-    color: #ffffff !important;
+
+/* Input / number-input backgrounds */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-testid="stNumberInput"] > div {
+    background: rgba(255,255,255,0.12) !important;
     border: 1px solid rgba(99,102,241,0.4) !important;
     border-radius: 8px !important;
-    caret-color: #ffffff !important;
 }
-[data-testid="stSidebar"] input[type="number"]:focus,
-[data-testid="stSidebar"] input[type="text"]:focus,
-[data-testid="stSidebar"] input:focus {
+[data-testid="stSidebar"] [data-baseweb="input"] input,
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] [data-baseweb="input"] > div > div {
+    background: transparent !important;
+    border: none !important;
+}
+[data-testid="stSidebar"] input:focus,
+[data-testid="stSidebar"] [data-baseweb="input"]:focus-within {
     background: rgba(255,255,255,0.20) !important;
     border-color: #818cf8 !important;
     box-shadow: 0 0 0 2px rgba(79,70,229,0.3) !important;
-    color: #ffffff !important;
 }
-/* BaseWeb Input wrapper — catches Streamlit 1.35+ number input */
-[data-testid="stSidebar"] [data-baseweb="input"] {
-    background: rgba(255,255,255,0.10) !important;
-    border-radius: 8px !important;
-}
-[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
-[data-testid="stSidebar"] [data-baseweb="input"] input,
-[data-testid="stSidebar"] [data-baseweb="input"] input:focus {
-    background: transparent !important;
-    color: #ffffff !important;
-    caret-color: #ffffff !important;
-}
-/* Slider value labels */
-[data-testid="stSidebar"] [data-testid="stTickBar"] *,
-[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] span,
-[data-testid="stSidebar"] [data-baseweb="slider"] [data-testid="stThumbValue"] {
-    color: #ffffff !important;
-}
+
+/* Step buttons */
 [data-testid="stSidebar"] [data-testid="stNumberInputStepDown"],
 [data-testid="stSidebar"] [data-testid="stNumberInputStepUp"],
 [data-testid="stSidebar"] [data-testid="stNumberInput"] button {
