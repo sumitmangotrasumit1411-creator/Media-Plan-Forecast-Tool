@@ -4,7 +4,8 @@ enableCORS       = false
 enableXsrfProtection = true
 headless         = true          # required for Docker / cloud deployments
 port             = 8501
-address          = "127.0.0.1"
+# address is NOT set here — Streamlit Cloud manages its own binding.
+# For local development, run with: streamlit run app.py --server.address 127.0.0.1
 
 [runner]
 fastReruns       = true
