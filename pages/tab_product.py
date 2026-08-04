@@ -1,7 +1,6 @@
 """
 pages/tab_product.py — Product Intelligence tab
-Renders ad type KPI strip, ASIN efficiency quadrant, top/worst ASINs,
-category rollup, bid strategy heatmap, and match type efficiency.
+Renders: Ad Type Performance (SP/SB/SD), Category Performance, Match Type Efficiency.
 """
 
 import streamlit as st
