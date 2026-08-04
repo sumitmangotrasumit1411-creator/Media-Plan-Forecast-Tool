@@ -253,26 +253,50 @@ def monthly_forecast(
     growth_factor = 1 + growth_pct / 100
 
     # ── Build monthly actuals from trend_df ──────────────────────────────
-    # Strategy: if trend_df contains multi-year data (e.g. 2024 + 2025),
-    # use the PRIOR year (max_year - 1) as "last year actuals" so the
-    # forecast table shows 2024 actual vs 2025 projected.
-    # If only one year is present, use it directly.
+    # trend_df is built at weekly (freq='W') granularity, so we must GROUP
+    # BY (year, month) and SUM spend/sales — never read a single row per month.
+    #
+    # Year selection strategy:
+    #   • Multi-year data  → use the LATEST year (max_year) as actuals.
+    #     The prior-year-as-baseline logic was removed because when the user
+    #     uploads a 2025 report they want to see 2025 actuals, not 2024.
+    #   • Single year      → use it directly.
+    #
+    # ACOS and ROAS are ALWAYS recomputed from the month-summed spend/sales.
+    # They are never read from the pre-aggregated trend_df columns, which
+    # contain period-level (weekly) rates that are wrong at monthly granularity.
     actuals_year: int = 0
+    monthly_actuals: dict = {}   # month_num → {spend, ad_sales, impressions}
+
     if trend_df is not None and not trend_df.empty and "_period_dt" in trend_df.columns:
         work = trend_df.copy()
         work["_month"] = pd.to_datetime(work["_period_dt"]).dt.month
         work["_year"]  = pd.to_datetime(work["_period_dt"]).dt.year
-        max_year  = int(work["_year"].max())
-        min_year  = int(work["_year"].min())
-        # Prefer prior year as actuals baseline when multi-year data available
-        if max_year > min_year:
-            actuals_year = max_year - 1
-        else:
-            actuals_year = max_year
-        monthly = work[work["_year"] == actuals_year].copy()
-        monthly = monthly.sort_values("_month").reset_index(drop=True)
-    else:
-        monthly = pd.DataFrame()
+        max_year = int(work["_year"].max())
+
+        # Use the latest year present in the data as actuals
+        actuals_year = max_year
+        year_work = work[work["_year"] == actuals_year]
+
+        # Aggregate by month — sum all numeric cols so weekly rows are merged
+        agg_cols = {c: "sum" for c in ["spend", "ad_sales", "impressions", "clicks", "ad_orders"]
+                    if c in year_work.columns}
+        if agg_cols:
+            month_agg = year_work.groupby("_month", sort=True).agg(agg_cols).reset_index()
+            for _, row in month_agg.iterrows():
+                mn = int(row["_month"])
+                sp = float(row["spend"])    if "spend"    in row.index else None
+                sl = float(row["ad_sales"]) if "ad_sales" in row.index else None
+                im = float(row["impressions"]) if "impressions" in row.index else None
+                # Always recompute ACOS and ROAS from summed spend/sales
+                ac = round(sp / sl * 100, 2) if (sp and sl and sl > 0) else None
+                ro = round(sl / sp, 2)       if (sp and sl and sp > 0) else None
+                monthly_actuals[mn] = {
+                    "spend": sp, "ad_sales": sl,
+                    "acos_%": ac, "roas": ro, "impressions": im,
+                }
+
+    monthly = pd.DataFrame()   # kept for legacy — no longer used for row lookup
 
     # ── Seasonal weights — used to distribute annual totals when no actuals ──
     # Each month's weight = event_multiplier / sum(all multipliers)
@@ -300,13 +324,14 @@ def monthly_forecast(
 
     rows = []
     for idx, month_num in enumerate(range(1, 13)):
-        actual_row = monthly[monthly["_month"] == month_num] if not monthly.empty else pd.DataFrame()
-
-        actual_spend = float(actual_row["spend"].values[0])    if not actual_row.empty and "spend"    in actual_row.columns else None
-        actual_sales = float(actual_row["ad_sales"].values[0]) if not actual_row.empty and "ad_sales" in actual_row.columns else None
-        actual_acos  = float(actual_row["acos_%"].values[0])   if not actual_row.empty and "acos_%"   in actual_row.columns else None
-        actual_roas  = float(actual_row["roas"].values[0])     if not actual_row.empty and "roas"     in actual_row.columns else None
-        actual_impr  = float(actual_row["impressions"].values[0]) if not actual_row.empty and "impressions" in actual_row.columns else None
+        # Pull month actuals from the pre-aggregated dict (sums all weekly rows)
+        ma = monthly_actuals.get(month_num, {})
+        actual_spend = ma.get("spend")
+        actual_sales = ma.get("ad_sales")
+        actual_impr  = ma.get("impressions")
+        # Always derive ACOS/ROAS from spend/sales — never trust pre-stored rates
+        actual_acos  = round(actual_spend / actual_sales * 100, 2) if (actual_spend and actual_sales and actual_sales > 0) else None
+        actual_roas  = round(actual_sales / actual_spend, 2)       if (actual_spend and actual_sales and actual_spend > 0) else None
 
         events = AMAZON_EVENTS.get(month_num, [])
         is_event = len(events) > 0
