@@ -31,6 +31,7 @@ _ICON_MAP = {
     "Total Shipped Revenue": "🚚",
     "Total Ordered Units":   "📊",
     "Avg Selling Price":     "💵",
+    "Glance Views":          "👀",
 }
 
 
@@ -211,11 +212,15 @@ def render_metrics_dashboard(ads_metrics: dict, vendor_metrics: dict) -> None:
             ("Total Ordered Revenue", fmt_currency(vendor_metrics.get("total_ordered_revenue")), None),
             ("Total Shipped Revenue", fmt_currency(vendor_metrics.get("total_shipped_revenue")), None),
             ("Total Ordered Units",   fmt_num(vendor_metrics.get("total_ordered_units")),        None),
-            ("Avg Selling Price",     fmt_currency(vendor_metrics.get("avg_selling_price")),      None),
+            ("Avg Selling Price",     fmt_currency(vendor_metrics.get("avg_selling_price")),     None),
         ]
-        cols2 = st.columns(4)
+        # Add Glance Views if present (new Vendor Central format)
+        gv = vendor_metrics.get("total_glance_views")
+        if gv and gv > 0:
+            kpis_vendor.append(("Glance Views", fmt_num(gv), "Product detail page visits"))
+        cols2 = st.columns(min(len(kpis_vendor), 4))
         for i, (label, val, delta) in enumerate(kpis_vendor):
-            with cols2[i % 4]:
+            with cols2[i % len(cols2)]:
                 st.markdown(_metric_card(label, val, delta), unsafe_allow_html=True)
 
     # ── Performance gauges ────────────────────────────────────────────────

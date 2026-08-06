@@ -265,7 +265,10 @@ def asin_ads_breakdown(df: pd.DataFrame) -> pd.DataFrame:
 
 def extract_vendor_metrics(df: pd.DataFrame) -> dict:
     """Compute top-level aggregated metrics from the Vendor Central report."""
-    sum_cols = [c for c in ["ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units"] if c in df.columns]
+    sum_cols = [c for c in [
+        "ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units",
+        "glance_views",
+    ] if c in df.columns]
     totals = df[sum_cols].sum() if sum_cols else pd.Series(dtype=float)
 
     def _get(col):
@@ -276,9 +279,15 @@ def extract_vendor_metrics(df: pd.DataFrame) -> dict:
         "total_shipped_revenue": _get("shipped_revenue"),
         "total_ordered_units":   _get("ordered_units"),
         "total_shipped_units":   _get("shipped_units"),
+        "total_glance_views":    _get("glance_views"),
     }
 
-    if m["total_ordered_units"] > 0 and m["total_ordered_revenue"] > 0:
+    # avg_selling_price: prefer direct column (new Vendor format has it as a column),
+    # fall back to computing from revenue / units
+    if "avg_selling_price" in df.columns:
+        asp_val = pd.to_numeric(df["avg_selling_price"], errors="coerce").mean()
+        m["avg_selling_price"] = round(float(asp_val), 2) if pd.notna(asp_val) else None
+    elif m["total_ordered_units"] > 0 and m["total_ordered_revenue"] > 0:
         m["avg_selling_price"] = round(m["total_ordered_revenue"] / m["total_ordered_units"], 2)
     else:
         m["avg_selling_price"] = None

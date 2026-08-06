@@ -105,15 +105,36 @@ AD_COLUMN_ALIASES: dict = {
     "acos": "acos",
     "advertising cost of sales (acos)": "acos",
     "total acos": "acos",
+    "acos 14 days (%)": "acos",
+    "acos (%)": "acos",
     # ROAS
     "roas": "roas",
     "return on ad spend (roas)": "roas",
     "total roas": "roas",
     "long-term roas": "roas_longterm",
+    "roas ($)": "roas",
+    # Spend — dollar-suffixed variants (new export format)
+    "ad spend ($)": "spend",
+    "total ad spend ($)": "spend",
+    # Sales — dollar-suffixed variants
+    "ad sales ($)": "ad_sales",
+    "total ad sales ($)": "ad_sales",
+    "14 day total sales ($)": "ad_sales",
+    "7 day total sales ($)": "ad_sales",
+    # CPC / CTR — suffixed variants
+    "cpc ($)": "cpc",
+    "cost per click ($)": "cpc",
+    "ctr (%)": "ctr",
+    "click-through rate (%)": "ctr",
+    # Conversion rate
+    "ad conversion 14 days (%)": "conversion_rate",
+    "conversion rate (%)": "conversion_rate",
+    "cvr (%)": "conversion_rate",
     # Campaign metadata
     "campaign name": "campaign_name",
     "ad group name": "ad_group_name",
     "targeting": "targeting",
+    "targeting type": "match_type",
     "targeting match type": "match_type",
     "match type": "match_type",
     "target type": "target_type",
@@ -154,29 +175,67 @@ AD_COLUMN_ALIASES: dict = {
     "percent of purchases new to brand": "pct_ntb_purchases",
     "percent of sales new to brand": "pct_ntb_sales",
     "sales (new to brand)": "sales_ntb",
+    # Brand column
+    "brand": "brand",
 }
 
 VENDOR_COLUMN_ALIASES: dict = {
+    # Revenue / OPS — new format uses "OPS ($)"
     "ordered revenue": "ordered_revenue",
     "ordered product sales": "ordered_revenue",
     "total ordered revenue": "ordered_revenue",
+    "ops ($)": "ordered_revenue",
+    "ops": "ordered_revenue",
+    "ordered product sales ($)": "ordered_revenue",
+    "total ops ($)": "ordered_revenue",
+    # Shipped revenue / COGS
     "shipped revenue": "shipped_revenue",
     "shipped product sales": "shipped_revenue",
     "total shipped revenue": "shipped_revenue",
+    "shipped cogs ($)": "shipped_revenue",
+    "shipped cogs": "shipped_revenue",
+    # Units
     "ordered units": "ordered_units",
     "shipped units": "shipped_units",
     "total ordered units": "ordered_units",
     "total shipped units": "shipped_units",
+    "units ordered": "ordered_units",
+    "units shipped": "shipped_units",
+    # Avg selling price
+    "average selling price ($)": "avg_selling_price",
+    "average selling price": "avg_selling_price",
+    "avg selling price ($)": "avg_selling_price",
+    "avg. selling price ($)": "avg_selling_price",
+    # Glance views — product detail page visits (different from ad impressions)
+    "glance views": "glance_views",
+    "page views": "glance_views",
+    "detail page views": "glance_views",
+    # Ad metrics carried in vendor report
+    "ad spend ($)": "spend",
+    "ad sales ($)": "ad_sales",
+    "roas ($)": "roas",
+    "roas": "roas",
+    "acos 14 days (%)": "acos",
+    "acos (%)": "acos",
+    "cpc ($)": "cpc",
+    "ctr (%)": "ctr",
+    "ad conversion 14 days (%)": "conversion_rate",
+    "clicks": "clicks",
+    "impressions": "impressions",
+    # ASIN / product
     "asin": "asin",
     "product title": "product_title",
     "product name": "product_title",
     "title": "product_title",
     "category": "category",
     "subcategory": "subcategory",
+    # Date / period
+    "date": "period",
     "week": "period",
     "month": "period",
-    "date": "period",
     "reporting period": "period",
+    "report date": "period",
+    # Brand
     "brand": "brand",
 }
 
@@ -196,9 +255,10 @@ _NUMERIC_COLUMNS: frozenset = frozenset({
     "ad_sales_longterm", "ad_orders", "ad_orders_ntb", "cpp", "cpp_ntb",
     "ctr", "vctr", "cpc", "acos", "roas", "roas_longterm",
     "campaign_budget", "target_bid", "pct_ntb_purchases", "pct_ntb_sales",
-    "sales_ntb", "tos_is",
+    "sales_ntb", "tos_is", "conversion_rate",
     # Vendor
     "ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units",
+    "avg_selling_price", "glance_views",
 })
 
 # Pre-compiled strip regex (used in both fast and heuristic paths)
@@ -397,6 +457,43 @@ def _read_file(uploaded_file) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Campaign type normalisation
+# ---------------------------------------------------------------------------
+
+# Map every known variant of SP / SB / SD to one canonical string.
+# Keys are lowercased + stripped for case-insensitive matching.
+_CAMPAIGN_TYPE_MAP: dict = {
+    # Sponsored Products
+    "sponsored products":        "Sponsored Products",
+    "sponsored products (sp)":   "Sponsored Products",
+    "sp":                        "Sponsored Products",
+    # Sponsored Brands
+    "sponsored brands":          "Sponsored Brands",
+    "sponsored brands (sb)":     "Sponsored Brands",
+    "sb":                        "Sponsored Brands",
+    "headline search ads":       "Sponsored Brands",
+    # Sponsored Display
+    "sponsored display":         "Sponsored Display",
+    "sponsored display (sd)":    "Sponsored Display",
+    "sd":                        "Sponsored Display",
+}
+
+
+def _normalise_campaign_type(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise campaign_type values to canonical SP / SB / SD strings."""
+    if "campaign_type" not in df.columns:
+        return df
+    df["campaign_type"] = (
+        df["campaign_type"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .map(lambda v: _CAMPAIGN_TYPE_MAP.get(v, v.title()))
+    )
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -404,6 +501,7 @@ def parse_amazon_ads_report(uploaded_file) -> pd.DataFrame:
     """Parse an Amazon Advertising report. Returns normalised DataFrame."""
     df = _read_file(uploaded_file)
     df = _normalise_columns(df, AD_COLUMN_ALIASES)
+    df = _normalise_campaign_type(df)
     df = _clean_numeric(df)
     return df
 
@@ -412,6 +510,10 @@ def parse_vendor_central_report(uploaded_file) -> pd.DataFrame:
     """Parse a Vendor Central ASIN Sales report. Returns normalised DataFrame."""
     df = _read_file(uploaded_file)
     df = _normalise_columns(df, VENDOR_COLUMN_ALIASES)
+    # "period" (mapped from Date / Week / Month columns) → report_date
+    # so the trend engine and metrics layer can pick it up as a date column.
+    if "period" in df.columns and "report_date" not in df.columns:
+        df = df.rename(columns={"period": "report_date"})
     df = _clean_numeric(df)
     return df
 
@@ -423,6 +525,12 @@ def validate_ads_report(df: pd.DataFrame) -> list:
 
 
 def validate_vendor_report(df: pd.DataFrame) -> list:
-    """Return list of missing critical columns."""
-    required = ["ordered_revenue"]
-    return [c for c in required if c not in df.columns]
+    """Return list of missing critical columns.
+    The new Vendor Central format uses 'ordered_revenue' (mapped from OPS ($)).
+    Returns empty list if at least one revenue column is present.
+    """
+    # Accept ordered_revenue OR shipped_revenue as sufficient
+    revenue_cols = ["ordered_revenue", "shipped_revenue"]
+    if any(c in df.columns for c in revenue_cols):
+        return []
+    return ["ordered_revenue"]
