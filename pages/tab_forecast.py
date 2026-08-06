@@ -351,49 +351,55 @@ def render_forecast(
     _b_ad_contr = round(baseline_sales / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
     _b_org_contr = round(_b_organic / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
 
+    def _fmt_dollar(v):
+        """Format a number as $1,234,567"""
+        return f"${v:,.0f}" if v is not None else "—"
+
     def _scenario_row(label: str, s: dict) -> dict:
         """Build one projected scenario row from a forecast result dict."""
+        ad_sales   = s["target_ad_sales"]
+        org_sales  = s.get("projected_organic_sales",
+                           max(s["target_revenue"] - ad_sales, 0))
+        rev        = s["target_revenue"]
+        ad_pct     = s.get("projected_ad_contribution",
+                           round(ad_sales / rev * 100, 1) if rev > 0 else 0)
+        org_pct    = s.get("projected_org_contribution",
+                           round(org_sales / rev * 100, 1) if rev > 0 else 0)
         return {
-            "Scenario":                    label,
-            # ── Projected Revenue block ──
-            "Proj. Revenue ($)":           s["target_revenue"],
-            "Revenue Gap ($)":             s["revenue_gap"],
-            "Incr. Revenue ($)":           s.get("incremental_revenue", s["revenue_gap"]),
-            # ── Projected Ad block ──
-            "Proj. Ad Spend ($)":          s["recommended_spend"],
-            "Incr. Ad Spend ($)":          s["incremental_spend"],
-            "Proj. Ad Sales ($)":          s["target_ad_sales"],
-            "Ad Sales Contribution (%)":   s.get("projected_ad_contribution",
-                                               round(s["target_ad_sales"] / s["target_revenue"] * 100, 1)
-                                               if s["target_revenue"] > 0 else 0),
-            # ── Projected Organic block ──
-            "Proj. Organic Sales ($)":     s.get("projected_organic_sales",
-                                               max(s["target_revenue"] - s["target_ad_sales"], 0)),
-            "Organic Contribution (%)":    s.get("projected_org_contribution",
-                                               round(max(s["target_revenue"] - s["target_ad_sales"], 0)
-                                                     / s["target_revenue"] * 100, 1)
-                                               if s["target_revenue"] > 0 else 0),
-            # ── Projected Efficiency block ──
-            "Proj. ACOS (%)":              s["projected_acos_pct"],
-            "Proj. ROAS":                  s["projected_roas"] or 0,
-            "Proj. TACOS (%)":             s["projected_tacos_pct"] or 0,
+            "Scenario":                      label,
+            # ── Revenue block ──
+            "Proj. Revenue ($)":             rev,
+            "Revenue Gap ($)":               s["revenue_gap"],
+            "Incr. Revenue ($)":             s.get("incremental_revenue", s["revenue_gap"]),
+            # ── Ad block ──
+            "Proj. Ad Spend ($)":            s["recommended_spend"],
+            "Incr. Ad Spend ($)":            s["incremental_spend"],
+            # Combined: dollar + % in one column
+            "Proj. Ad Sales ($  %)":         f"{_fmt_dollar(ad_sales)}  ({ad_pct:.1f}%)",
+            # ── Organic block ──
+            "Proj. Organic Sales ($  %)":    f"{_fmt_dollar(org_sales)}  ({org_pct:.1f}%)",
+            # ── Efficiency block ──
+            "Proj. ACOS (%)":                s["projected_acos_pct"],
+            "Proj. ROAS":                    s["projected_roas"] or 0,
+            "Proj. TACOS (%)":               s["projected_tacos_pct"] or 0,
         }
 
-    # Current baseline row — projected columns left blank (—)
+    # Current baseline row
+    _b_ad_str  = f"{_fmt_dollar(baseline_sales)}  ({_b_ad_contr:.1f}%)"
+    _b_org_str = f"{_fmt_dollar(_b_organic)}  ({_b_org_contr:.1f}%)"
+
     current_row = pd.DataFrame([{
-        "Scenario":                  "📂 Current (Uploaded Data)",
-        "Proj. Revenue ($)":         baseline_revenue,
-        "Revenue Gap ($)":           0.0,
-        "Incr. Revenue ($)":         0.0,
-        "Proj. Ad Spend ($)":        baseline_spend,
-        "Incr. Ad Spend ($)":        0.0,
-        "Proj. Ad Sales ($)":        baseline_sales,
-        "Ad Sales Contribution (%)": _b_ad_contr,
-        "Proj. Organic Sales ($)":   _b_organic,
-        "Organic Contribution (%)":  _b_org_contr,
-        "Proj. ACOS (%)":            baseline_acos or 0,
-        "Proj. ROAS":                baseline_roas or 0,
-        "Proj. TACOS (%)":           baseline_tacos or 0,
+        "Scenario":                    "📂 Current (Uploaded Data)",
+        "Proj. Revenue ($)":           baseline_revenue,
+        "Revenue Gap ($)":             0.0,
+        "Incr. Revenue ($)":           0.0,
+        "Proj. Ad Spend ($)":          baseline_spend,
+        "Incr. Ad Spend ($)":          0.0,
+        "Proj. Ad Sales ($  %)":       _b_ad_str,
+        "Proj. Organic Sales ($  %)":  _b_org_str,
+        "Proj. ACOS (%)":              baseline_acos or 0,
+        "Proj. ROAS":                  baseline_roas or 0,
+        "Proj. TACOS (%)":             baseline_tacos or 0,
     }])
 
     # Scenario rows
@@ -409,25 +415,22 @@ def render_forecast(
     col_order = [
         "Scenario",
         "Proj. Revenue ($)", "Revenue Gap ($)", "Incr. Revenue ($)",
-        "Proj. Ad Spend ($)", "Incr. Ad Spend ($)", "Proj. Ad Sales ($)",
-        "Ad Sales Contribution (%)", "Proj. Organic Sales ($)", "Organic Contribution (%)",
+        "Proj. Ad Spend ($)", "Incr. Ad Spend ($)",
+        "Proj. Ad Sales ($  %)", "Proj. Organic Sales ($  %)",
         "Proj. ACOS (%)", "Proj. ROAS", "Proj. TACOS (%)",
     ]
     full_df = full_df[[c for c in col_order if c in full_df.columns]]
 
+    # Only numeric columns get format strings — the combined $ % columns are already strings
     fmt = {
-        "Proj. Revenue ($)":         "${:,.0f}",
-        "Revenue Gap ($)":           "${:,.0f}",
-        "Incr. Revenue ($)":         "${:,.0f}",
-        "Proj. Ad Spend ($)":        "${:,.0f}",
-        "Incr. Ad Spend ($)":        "${:,.0f}",
-        "Proj. Ad Sales ($)":        "${:,.0f}",
-        "Ad Sales Contribution (%)": "{:.1f}%",
-        "Proj. Organic Sales ($)":   "${:,.0f}",
-        "Organic Contribution (%)":  "{:.1f}%",
-        "Proj. ACOS (%)":            "{:.2f}%",
-        "Proj. ROAS":                "{:.2f}x",
-        "Proj. TACOS (%)":           "{:.2f}%",
+        "Proj. Revenue ($)":   "${:,.0f}",
+        "Revenue Gap ($)":     "${:,.0f}",
+        "Incr. Revenue ($)":   "${:,.0f}",
+        "Proj. Ad Spend ($)":  "${:,.0f}",
+        "Incr. Ad Spend ($)":  "${:,.0f}",
+        "Proj. ACOS (%)":      "{:.2f}%",
+        "Proj. ROAS":          "{:.2f}x",
+        "Proj. TACOS (%)":     "{:.2f}%",
     }
 
     # Column groups header (shown as a legend above the table)
