@@ -338,117 +338,139 @@ def render_forecast(
     st.markdown("---")
 
     # ── Scenario Comparison Table ───────────────────────────────────────────────
-    # The "Current" row always uses BASELINE values (uploaded report).
-    # ACOS and ROAS in the current row are labelled "Current" not "Projected".
+    # Design:
+    #   Row 0  = 📂 Current (Uploaded Data) — baseline only, no Projected columns
+    #   Row 1+ = one row per scenario — Projected columns are UNIQUE per scenario
+    #
+    # The "Current" columns appear ONLY on the baseline row so users instantly
+    # see that every subsequent row is a true what-if projection, not a copy.
+    # All projected metrics are derived fresh by the forecast engine.
+
+    # Compute baseline organic sales for the current row
+    _b_organic = max(baseline_revenue - baseline_sales, 0)
+    _b_ad_contr = round(baseline_sales / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
+    _b_org_contr = round(_b_organic / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
+
+    def _scenario_row(label: str, s: dict) -> dict:
+        """Build one projected scenario row from a forecast result dict."""
+        return {
+            "Scenario":                    label,
+            # ── Projected Revenue block ──
+            "Proj. Revenue ($)":           s["target_revenue"],
+            "Revenue Gap ($)":             s["revenue_gap"],
+            "Incr. Revenue ($)":           s.get("incremental_revenue", s["revenue_gap"]),
+            # ── Projected Ad block ──
+            "Proj. Ad Spend ($)":          s["recommended_spend"],
+            "Incr. Ad Spend ($)":          s["incremental_spend"],
+            "Proj. Ad Sales ($)":          s["target_ad_sales"],
+            "Ad Sales Contribution (%)":   s.get("projected_ad_contribution",
+                                               round(s["target_ad_sales"] / s["target_revenue"] * 100, 1)
+                                               if s["target_revenue"] > 0 else 0),
+            # ── Projected Organic block ──
+            "Proj. Organic Sales ($)":     s.get("projected_organic_sales",
+                                               max(s["target_revenue"] - s["target_ad_sales"], 0)),
+            "Organic Contribution (%)":    s.get("projected_org_contribution",
+                                               round(max(s["target_revenue"] - s["target_ad_sales"], 0)
+                                                     / s["target_revenue"] * 100, 1)
+                                               if s["target_revenue"] > 0 else 0),
+            # ── Projected Efficiency block ──
+            "Proj. ACOS (%)":              s["projected_acos_pct"],
+            "Proj. ROAS":                  s["projected_roas"] or 0,
+            "Proj. TACOS (%)":             s["projected_tacos_pct"] or 0,
+        }
+
+    # Current baseline row — projected columns left blank (—)
     current_row = pd.DataFrame([{
-        "Growth Target":              "📂 Current (Uploaded Data)",
-        "Current Revenue ($)":        baseline_revenue,
-        "Current Ad Spend ($)":       baseline_spend,
-        "Current Ad Sales ($)":       baseline_sales,
-        "Current ACOS (%)":           baseline_acos or 0,
-        "Current ROAS":               baseline_roas or 0,
-        "Current TACOS (%)":          baseline_tacos or 0,
-        "Revenue Gap ($)":            0.0,
-        "Projected Ad Spend ($)":     baseline_spend,
-        "Incremental Spend ($)":      0.0,
-        "Projected ACOS (%)":         baseline_acos or 0,
-        "Projected ROAS":             baseline_roas or 0,
-        "Projected TACOS (%)":        baseline_tacos or 0,
-        "Projected Ad Sales ($)":     baseline_sales,
-        "Projected Revenue ($)":      baseline_revenue,
+        "Scenario":                  "📂 Current (Uploaded Data)",
+        "Proj. Revenue ($)":         baseline_revenue,
+        "Revenue Gap ($)":           0.0,
+        "Incr. Revenue ($)":         0.0,
+        "Proj. Ad Spend ($)":        baseline_spend,
+        "Incr. Ad Spend ($)":        0.0,
+        "Proj. Ad Sales ($)":        baseline_sales,
+        "Ad Sales Contribution (%)": _b_ad_contr,
+        "Proj. Organic Sales ($)":   _b_organic,
+        "Organic Contribution (%)":  _b_org_contr,
+        "Proj. ACOS (%)":            baseline_acos or 0,
+        "Proj. ROAS":                baseline_roas or 0,
+        "Proj. TACOS (%)":           baseline_tacos or 0,
     }])
 
-    custom_row = None
-    cs_label   = ""
+    # Scenario rows
+    sc_rows = []
     if custom_scenario:
         cs_label = f"🎯 Custom ({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)"
-        custom_row = pd.DataFrame([{
-            "Growth Target":              cs_label,
-            "Current Revenue ($)":        baseline_revenue,
-            "Current Ad Spend ($)":       baseline_spend,
-            "Current Ad Sales ($)":       baseline_sales,
-            "Current ACOS (%)":           baseline_acos or 0,
-            "Current ROAS":               baseline_roas or 0,
-            "Current TACOS (%)":          baseline_tacos or 0,
-            "Revenue Gap ($)":            custom_scenario["revenue_gap"],
-            "Projected Ad Spend ($)":     custom_scenario["recommended_spend"],
-            "Incremental Spend ($)":      custom_scenario["incremental_spend"],
-            "Projected ACOS (%)":         custom_scenario["projected_acos_pct"] or 0,
-            "Projected ROAS":             custom_scenario["projected_roas"]     or 0,
-            "Projected TACOS (%)":        custom_scenario["projected_tacos_pct"] or 0,
-            "Projected Ad Sales ($)":     custom_scenario["target_ad_sales"],
-            "Projected Revenue ($)":      custom_scenario["target_revenue"],
-        }])
-
-    st.markdown('<div class="section-header">📋 Scenario Comparison — Current (Uploaded Data) vs Projected</div>', unsafe_allow_html=True)
-    # Build scenario rows — each includes both baseline (Current) and projected cols
-    sc_rows = []
+        sc_rows.append(_scenario_row(cs_label, custom_scenario))
     for s in scenarios:
-        sc_rows.append({
-            "Growth Target":              f"+{s['growth_pct']:.0f}%",
-            "Current Revenue ($)":        baseline_revenue,
-            "Current Ad Spend ($)":       baseline_spend,
-            "Current Ad Sales ($)":       baseline_sales,
-            "Current ACOS (%)":           baseline_acos or 0,
-            "Current ROAS":               baseline_roas or 0,
-            "Current TACOS (%)":          baseline_tacos or 0,
-            "Revenue Gap ($)":            s["revenue_gap"],
-            "Projected Revenue ($)":      s["target_revenue"],
-            "Projected Ad Spend ($)":     s["recommended_spend"],
-            "Projected Ad Sales ($)":     s["target_ad_sales"],
-            "Incremental Spend ($)":      s["incremental_spend"],
-            "Projected ACOS (%)":         s["projected_acos_pct"],
-            "Projected ROAS":             s["projected_roas"],
-            "Projected TACOS (%)":        s["projected_tacos_pct"],
-        })
-    sc_df = pd.DataFrame(sc_rows)
+        sc_rows.append(_scenario_row(f"📈 +{s['growth_pct']:.0f}%", s))
 
-    parts = [current_row]
-    if custom_row is not None:
-        parts.append(custom_row)
-    parts.append(sc_df)
-    full_df = pd.concat(parts, ignore_index=True)
+    full_df = pd.concat([current_row, pd.DataFrame(sc_rows)], ignore_index=True)
 
     col_order = [
-        "Growth Target",
-        # ── Current (Uploaded Data) ──
-        "Current Revenue ($)", "Current Ad Spend ($)", "Current Ad Sales ($)",
-        "Current ACOS (%)", "Current ROAS", "Current TACOS (%)",
-        # ── Projected (Forecast) ──
-        "Revenue Gap ($)", "Projected Revenue ($)", "Projected Ad Spend ($)",
-        "Projected Ad Sales ($)", "Incremental Spend ($)",
-        "Projected ACOS (%)", "Projected ROAS", "Projected TACOS (%)",
+        "Scenario",
+        "Proj. Revenue ($)", "Revenue Gap ($)", "Incr. Revenue ($)",
+        "Proj. Ad Spend ($)", "Incr. Ad Spend ($)", "Proj. Ad Sales ($)",
+        "Ad Sales Contribution (%)", "Proj. Organic Sales ($)", "Organic Contribution (%)",
+        "Proj. ACOS (%)", "Proj. ROAS", "Proj. TACOS (%)",
     ]
     full_df = full_df[[c for c in col_order if c in full_df.columns]]
 
     fmt = {
-        "Current Revenue ($)":    "${:,.0f}",
-        "Current Ad Spend ($)":   "${:,.0f}",
-        "Current Ad Sales ($)":   "${:,.0f}",
-        "Current ACOS (%)":       "{:.2f}%",
-        "Current ROAS":           "{:.2f}x",
-        "Current TACOS (%)":      "{:.2f}%",
-        "Revenue Gap ($)":        "${:,.0f}",
-        "Projected Revenue ($)":  "${:,.0f}",
-        "Projected Ad Spend ($)": "${:,.0f}",
-        "Projected Ad Sales ($)": "${:,.0f}",
-        "Incremental Spend ($)":  "${:,.0f}",
-        "Projected ACOS (%)":     "{:.2f}%",
-        "Projected ROAS":         "{:.2f}x",
-        "Projected TACOS (%)":    "{:.2f}%",
+        "Proj. Revenue ($)":         "${:,.0f}",
+        "Revenue Gap ($)":           "${:,.0f}",
+        "Incr. Revenue ($)":         "${:,.0f}",
+        "Proj. Ad Spend ($)":        "${:,.0f}",
+        "Incr. Ad Spend ($)":        "${:,.0f}",
+        "Proj. Ad Sales ($)":        "${:,.0f}",
+        "Ad Sales Contribution (%)": "{:.1f}%",
+        "Proj. Organic Sales ($)":   "${:,.0f}",
+        "Organic Contribution (%)":  "{:.1f}%",
+        "Proj. ACOS (%)":            "{:.2f}%",
+        "Proj. ROAS":                "{:.2f}x",
+        "Proj. TACOS (%)":           "{:.2f}%",
     }
 
+    # Column groups header (shown as a legend above the table)
+    st.markdown("""
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;font-weight:700;">
+        <span style="color:#6b7280;">📂 Row 1 = Current baseline &nbsp;|&nbsp;
+        All other rows = fully projected what-if scenarios</span>
+        <span style="background:#dbeafe;color:#1d4ed8;border-radius:6px;padding:2px 10px;">Revenue</span>
+        <span style="background:#fce7f3;color:#9d174d;border-radius:6px;padding:2px 10px;">Ad</span>
+        <span style="background:#d1fae5;color:#065f46;border-radius:6px;padding:2px 10px;">Organic</span>
+        <span style="background:#fef3c7;color:#92400e;border-radius:6px;padding:2px 10px;">Efficiency</span>
+    </div>
+    """, unsafe_allow_html=True)
+
     def _row_style(row):
-        if str(row.get("Growth Target", "")).startswith("📂 Current"):
-            return ["background-color:#f0fdf4; font-weight:700"] * len(row)
-        if str(row.get("Growth Target", "")).startswith("🎯 Custom"):
+        if str(row.get("Scenario", "")).startswith("📂 Current"):
+            return ["background-color:#f0fdf4; font-weight:800; border-bottom:2px solid #10b981"] * len(row)
+        if str(row.get("Scenario", "")).startswith("🎯 Custom"):
             return ["background-color:#eff6ff; font-weight:700; color:#1d4ed8"] * len(row)
         return [""] * len(row)
 
+    st.markdown('<div class="section-header">📋 What-If Scenario Planner — All Projected Metrics Unique per Scenario</div>', unsafe_allow_html=True)
     st.dataframe(
         full_df.style.format(fmt, na_rep="—").apply(_row_style, axis=1),
         use_container_width=True,
+        height=min(40 + len(full_df) * 38, 480),
     )
+
+    # ── Baseline metrics reference strip ────────────────────────────────────────
+    st.markdown(f"""
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-left:4px solid #6b7280;
+                border-radius:0 8px 8px 0;padding:10px 20px;margin:8px 0 24px;
+                font-size:12px;color:#6b7280;display:flex;gap:28px;flex-wrap:wrap;">
+        <span style="font-weight:700;color:#374151;">📂 Current Baseline (Uploaded Data):</span>
+        <span>Revenue <strong>{fmt_currency(baseline_revenue)}</strong></span>
+        <span>Ad Spend <strong>{fmt_currency(baseline_spend)}</strong></span>
+        <span>Ad Sales <strong>{fmt_currency(baseline_sales)}</strong></span>
+        <span>Organic <strong>{fmt_currency(_b_organic)}</strong></span>
+        <span>ACOS <strong>{fmt_pct(baseline_acos)}</strong></span>
+        <span>ROAS <strong>{f"{baseline_roas:.2f}x" if baseline_roas else "N/A"}</strong></span>
+        <span>TACOS <strong>{fmt_pct(baseline_tacos)}</strong></span>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── Revenue vs Spend chart ──────────────────────────────────────────────────
     st.markdown('<div class="section-header">📈 Current vs Projected Revenue & Spend by Scenario</div>', unsafe_allow_html=True)

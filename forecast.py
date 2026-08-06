@@ -104,10 +104,23 @@ def run_forecast(
         recommended_spend = target_ad_sales * (effective_acos / 100)
 
     # ---- Derived metrics -------------------------------------------------
-    incremental_spend = recommended_spend - total_ad_spend
-    effective_acos = (recommended_spend / target_ad_sales * 100) if target_ad_sales > 0 else 0
-    projected_roas = round(target_ad_sales / recommended_spend, 2) if recommended_spend > 0 else None
-    projected_tacos = round(recommended_spend / target_revenue * 100, 2) if target_revenue > 0 else None
+    incremental_spend    = recommended_spend - total_ad_spend
+    incremental_revenue  = target_revenue - baseline_revenue
+    effective_acos       = (recommended_spend / target_ad_sales * 100) if target_ad_sales > 0 else 0
+    projected_roas       = round(target_ad_sales / recommended_spend, 2) if recommended_spend > 0 else None
+    projected_tacos      = round(recommended_spend / target_revenue * 100, 2) if target_revenue > 0 else None
+
+    # Organic sales = total revenue minus ad-attributed sales
+    projected_organic_sales   = max(target_revenue - target_ad_sales, 0)
+    baseline_organic_sales    = max(baseline_revenue - total_ad_sales, 0)
+
+    # Ad contribution % = ad sales / total revenue
+    projected_ad_contribution = round(target_ad_sales / target_revenue * 100, 1) if target_revenue > 0 else 0
+    baseline_ad_contribution  = round(total_ad_sales / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
+
+    # Organic contribution % = organic sales / total revenue
+    projected_org_contribution = round(projected_organic_sales / target_revenue * 100, 1) if target_revenue > 0 else 0
+    baseline_org_contribution  = round(baseline_organic_sales / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
 
     # ---- Channel allocation ----------------------------------------------
     channel_allocation = {
@@ -127,26 +140,33 @@ def run_forecast(
         )
 
     return {
-        # Baseline
-        "baseline_revenue":   round(baseline_revenue, 2),
-        "current_ad_spend":   round(total_ad_spend, 2),
-        "current_ad_sales":   round(total_ad_sales, 2),
-        "current_acos_pct":   round(current_acos, 2) if current_acos else None,
-        "current_tacos_pct":  round(current_tacos, 2) if current_tacos else None,
-        "current_roas":       round(current_roas, 2) if current_roas else None,
-        # Targets
-        "growth_pct":         growth_pct,
-        "target_revenue":     round(target_revenue, 2),
-        "revenue_gap":        round(revenue_gap, 2),
-        "target_ad_sales":    round(target_ad_sales, 2),
-        "recommended_spend":  round(recommended_spend, 2),
-        "incremental_spend":  round(incremental_spend, 2),
-        "projected_acos_pct": round(effective_acos, 2),
-        "projected_roas":     projected_roas,
-        "projected_tacos_pct": projected_tacos,
+        # Baseline (always from uploaded report — never overwritten)
+        "baseline_revenue":            round(baseline_revenue, 2),
+        "current_ad_spend":            round(total_ad_spend, 2),
+        "current_ad_sales":            round(total_ad_sales, 2),
+        "current_acos_pct":            round(current_acos, 2) if current_acos else None,
+        "current_tacos_pct":           round(current_tacos, 2) if current_tacos else None,
+        "current_roas":                round(current_roas, 2) if current_roas else None,
+        "baseline_organic_sales":      round(baseline_organic_sales, 2),
+        "baseline_ad_contribution":    baseline_ad_contribution,
+        "baseline_org_contribution":   baseline_org_contribution,
+        # Projected targets — unique per scenario
+        "growth_pct":                  growth_pct,
+        "target_revenue":              round(target_revenue, 2),
+        "revenue_gap":                 round(revenue_gap, 2),
+        "incremental_revenue":         round(incremental_revenue, 2),
+        "target_ad_sales":             round(target_ad_sales, 2),
+        "recommended_spend":           round(recommended_spend, 2),
+        "incremental_spend":           round(incremental_spend, 2),
+        "projected_acos_pct":          round(effective_acos, 2),
+        "projected_roas":              projected_roas,
+        "projected_tacos_pct":         projected_tacos,
+        "projected_organic_sales":     round(projected_organic_sales, 2),
+        "projected_ad_contribution":   projected_ad_contribution,
+        "projected_org_contribution":  projected_org_contribution,
         # Allocation
-        "channel_allocation":        channel_allocation,
-        "campaign_recommendations":  campaign_recommendations,
+        "channel_allocation":          channel_allocation,
+        "campaign_recommendations":    campaign_recommendations,
         # Track which overrides were used (for UI labelling)
         "is_custom_scenario": any([
             override_target_revenue, override_ad_spend,
