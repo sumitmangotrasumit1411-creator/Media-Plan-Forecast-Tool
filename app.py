@@ -22,6 +22,7 @@ import pandas as pd
 from parser import (
     parse_amazon_ads_report, parse_vendor_central_report,
     validate_ads_report, validate_vendor_report,
+    detect_report_type,
 )
 from metrics import (
     extract_ads_metrics, extract_vendor_metrics,
@@ -956,18 +957,62 @@ def main():
         """, unsafe_allow_html=True)
         return
 
-    # ── Parse files ─────────────────────────────────────────────────────────
+    # ── Auto-detect & parse files ────────────────────────────────────────────
+    # Sniff each uploaded file's header row to confirm it is the correct type.
+    # If the user uploads files in the wrong slots, swap them automatically
+    # and show an info banner explaining what happened.
     ads_df       = None
     vendor_df    = None
     ads_metrics  = {}
     vendor_metrics = {}
 
+    _ads_file    = ads_file
+    _vendor_file = vendor_file
+
+    if ads_file and vendor_file:
+        ads_detected    = detect_report_type(ads_file)
+        vendor_detected = detect_report_type(vendor_file)
+        ads_file.seek(0)
+        vendor_file.seek(0)
+        if ads_detected == "vendor" and vendor_detected == "ads":
+            _ads_file, _vendor_file = vendor_file, ads_file
+            st.info(
+                "🔄 **Files auto-swapped** — the file uploaded to the Ads slot looked like a "
+                "Vendor Central report, and vice versa. They have been processed in the correct slots automatically."
+            )
+        elif ads_detected == "vendor" and vendor_detected == "vendor":
+            st.warning(
+                "⚠️ Both uploaded files look like Vendor Central reports. "
+                "Please upload your Amazon Advertising report (with Targeting Type / Campaign Type columns) in the top slot."
+            )
+        elif ads_detected == "ads" and vendor_detected == "ads":
+            st.warning(
+                "⚠️ Both uploaded files look like Amazon Ads reports. "
+                "Please upload your Vendor Central report (with OPS / Glance Views columns) in the bottom slot."
+            )
+    elif ads_file:
+        detected = detect_report_type(ads_file)
+        ads_file.seek(0)
+        if detected == "vendor":
+            _ads_file, _vendor_file = None, ads_file
+            st.info(
+                "🔄 **File auto-routed** — the file you uploaded to the Ads slot looks like a "
+                "Vendor Central report. It has been parsed as Vendor Central automatically."
+            )
+    elif vendor_file:
+        detected = detect_report_type(vendor_file)
+        vendor_file.seek(0)
+        if detected == "ads":
+            _ads_file, _vendor_file = vendor_file, None
+            st.info(
+                "🔄 **File auto-routed** — the file you uploaded to the Vendor slot looks like an "
+                "Ads report. It has been parsed as an Ads report automatically."
+            )
+
     with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds…"):
-        if ads_file:
+        if _ads_file:
             try:
-                with st.spinner("🔍 Parsing Amazon Ads report (PyArrow fast path)…"):
-                    pass  # spinner message updated; actual work below
-                ads_df, ads_metrics = _load_ads(ads_file)
+                ads_df, ads_metrics = _load_ads(_ads_file)
                 missing = validate_ads_report(ads_df)
                 if missing:
                     st.warning(f"Amazon Ads report is missing columns: {missing}. Metrics may be partial.")
@@ -979,9 +1024,9 @@ def main():
                 st.error(f"Error reading Amazon Ads report: {e}")
                 ads_df = None
 
-        if vendor_file:
+        if _vendor_file:
             try:
-                vendor_df, vendor_metrics = _load_vendor(vendor_file)
+                vendor_df, vendor_metrics = _load_vendor(_vendor_file)
                 missing_v = validate_vendor_report(vendor_df)
                 if missing_v:
                     st.warning(f"Vendor Central report is missing columns: {missing_v}. Metrics may be partial.")

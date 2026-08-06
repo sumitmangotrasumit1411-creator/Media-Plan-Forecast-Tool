@@ -154,6 +154,8 @@ AD_COLUMN_ALIASES: dict = {
     "advertised product brand": "brand",
     "advertised product category": "category",
     "advertised product subcategory": "subcategory",
+    "title": "product_title",
+    "title ": "product_title",
     "campaign id": "campaign_id",
     "campaign bid strategy": "bid_strategy",
     "date range": "date_range",
@@ -491,6 +493,53 @@ def _normalise_campaign_type(df: pd.DataFrame) -> pd.DataFrame:
         .map(lambda v: _CAMPAIGN_TYPE_MAP.get(v, v.title()))
     )
     return df
+
+
+# ---------------------------------------------------------------------------
+# Report type auto-detection
+# ---------------------------------------------------------------------------
+
+# Columns that are strong signals of a Vendor Central report
+_VENDOR_SIGNAL_COLS = frozenset({
+    "ops ($)", "ops", "ordered_revenue", "ordered product sales",
+    "shipped cogs ($)", "shipped cogs", "glance views", "glance_views",
+    "units ordered", "ordered units", "average selling price ($)",
+})
+
+# Columns that are strong signals of an Ads report
+_ADS_SIGNAL_COLS = frozenset({
+    "brand", "targeting type", "campaign type", "campaign name",
+    "ad group name", "targeting", "match type", "search term",
+    "portfolio name", "campaign id", "bid strategy",
+})
+
+
+def detect_report_type(uploaded_file) -> str:
+    """
+    Sniff the first row of an uploaded file and return 'ads' or 'vendor'.
+    Reads only the header row — no data loaded.
+    Falls back to 'ads' if indeterminate.
+    """
+    try:
+        import io as _io
+        name = uploaded_file.name.lower()
+        uploaded_file.seek(0)
+        if name.endswith(".csv"):
+            header_df = pd.read_csv(uploaded_file, nrows=0, dtype=str,
+                                    encoding="utf-8-sig", on_bad_lines="skip")
+        else:
+            raw = uploaded_file.read()
+            uploaded_file.seek(0)
+            header_df = pd.read_excel(_io.BytesIO(raw), nrows=0, dtype=str,
+                                      engine="openpyxl")
+        cols = frozenset(c.strip().lower() for c in header_df.columns)
+        vendor_hits = len(cols & _VENDOR_SIGNAL_COLS)
+        ads_hits    = len(cols & _ADS_SIGNAL_COLS)
+        if vendor_hits > ads_hits:
+            return "vendor"
+        return "ads"
+    except Exception:
+        return "ads"
 
 
 # ---------------------------------------------------------------------------
