@@ -36,6 +36,32 @@ except ImportError:
     _HAVE_PYARROW = False
 
 # ---------------------------------------------------------------------------
+# openpyxl colour-safety patch
+# ---------------------------------------------------------------------------
+# Amazon-exported XLSX files (and many formatted reports) contain cells with
+# non-standard colour values that violate the aRGB hex constraint enforced by
+# openpyxl ≥ 3.1.  The patch below silences the ValueError by returning a
+# safe fallback colour instead of raising.  This is applied once at import
+# time and has no effect when openpyxl is not installed.
+try:
+    import openpyxl.styles.colors as _oxl_colors  # type: ignore
+
+    _orig_color_init = _oxl_colors.Color.__init__
+
+    def _safe_color_init(self, rgb=None, indexed=None, auto=None, theme=None,
+                         tint=0.0, index=None, type=None):  # noqa: A002
+        try:
+            _orig_color_init(self, rgb=rgb, indexed=indexed, auto=auto,
+                             theme=theme, tint=tint, index=index, type=type)
+        except (ValueError, TypeError):
+            # Bad colour value — fall back to opaque black
+            _orig_color_init(self, rgb="FF000000")
+
+    _oxl_colors.Color.__init__ = _safe_color_init
+except Exception:
+    pass  # openpyxl not installed or API changed — skip patch silently
+
+# ---------------------------------------------------------------------------
 # Column aliases — map every known Amazon export header variant to canonical name
 # ---------------------------------------------------------------------------
 
@@ -311,7 +337,60 @@ def _read_file(uploaded_file) -> pd.DataFrame:
 
     elif name.endswith((".xlsx", ".xls")):
         raw = uploaded_file.read()
-        return pd.read_excel(io.BytesIO(raw), engine="openpyxl", dtype=str)
+        buf = io.BytesIO(raw)
+
+        # ── Engine selection ─────────────────────────────────────────────
+        # .xls (legacy binary) → xlrd only (openpyxl cannot read .xls)
+        # .xlsx               → openpyxl primary (colour patch applied at
+        #                        module load), calamine fallback, then
+        #                        a raw read with data_only=True as last resort.
+        if name.endswith(".xls"):
+            try:
+                return pd.read_excel(buf, engine="xlrd", dtype=str)
+            except Exception as e:
+                raise ValueError(f"Could not read .xls file: {e}") from e
+
+        # .xlsx — try engines in order
+        engines_to_try = ["openpyxl"]
+        try:
+            import python_calamine  # noqa: F401
+            engines_to_try.append("calamine")
+        except ImportError:
+            pass
+
+        last_exc: Exception = Exception("unknown")
+        for eng in engines_to_try:
+            try:
+                buf.seek(0)
+                return pd.read_excel(buf, engine=eng, dtype=str)
+            except Exception as exc:
+                last_exc = exc
+                continue
+
+        # Last resort: open workbook manually with data_only + keep_vba=False
+        # to bypass any remaining style/colour issues
+        try:
+            import openpyxl
+            buf.seek(0)
+            wb = openpyxl.load_workbook(buf, data_only=True, read_only=True)
+            ws = wb.active
+            data = list(ws.values)
+            wb.close()
+            if data:
+                headers = [str(c) if c is not None else "" for c in data[0]]
+                rows = [
+                    [str(cell) if cell is not None else "" for cell in row]
+                    for row in data[1:]
+                ]
+                return pd.DataFrame(rows, columns=headers)
+        except Exception:
+            pass
+
+        raise ValueError(
+            f"Could not read Excel file after trying all engines. "
+            f"Last error: {last_exc}. "
+            f"Try re-saving the file as .xlsx from Excel and upload again."
+        )
 
     else:
         raise ValueError(f"Unsupported file format: {uploaded_file.name}")
