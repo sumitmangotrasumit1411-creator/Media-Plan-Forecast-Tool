@@ -760,7 +760,7 @@ def sidebar():
         "Amazon Advertising Report",
         type=["csv", "csv.gz", "zip", "xlsx", "xls"],
         max_upload_size=750,
-        help="For large reports, ZIP the CSV first. Supports CSV, CSV.GZ, ZIP, XLSX and XLS (up to 750MB).",
+        help="Upload your Amazon Ads report. Large CSVs are automatically processed in forecast mode; ZIP and CSV.GZ are also supported (up to 750MB).",
         label_visibility="collapsed",
     )
 
@@ -772,7 +772,7 @@ def sidebar():
         "Vendor Central ASIN Sales Report",
         type=["csv", "xlsx", "xls"],
         max_upload_size=750,
-        help="For large reports, ZIP the CSV first. Supports CSV, CSV.GZ, ZIP, XLSX and XLS (up to 750MB).",
+        help="Upload your Vendor Central report (CSV, XLSX or XLS).",
         label_visibility="collapsed",
     )
 
@@ -1097,43 +1097,61 @@ def main():
         st.error("Could not load any reports. Please check file formats and try again.")
         return
 
-    # ── Pre-compute breakdowns ──────────────────────────────────────────────
-    with st.spinner("⚙️ Computing campaign, ASIN and trend breakdowns…"):
-        bd = _compute_breakdowns(ads_df, vendor_df)
-    campaign_df    = bd["campaign_df"]
-    asin_ads_df    = bd["asin_ads_df"]
-    asin_vendor_df = bd["asin_vendor_df"]
-    merged_asin_df = _cached_merge_asin(asin_ads_df, asin_vendor_df)
-    match_df       = bd["match_df"]
-    prod_intel     = bd["prod_intel"]
-    bid_df         = bd["bid_df"]
-    ad_prod_df     = bd["ad_prod_df"]
-    trend_df       = bd["trend_df"]
+    # ── Compute breakdowns once per uploaded-file pair ───────────────────────
+    # Do NOT use st.cache_data here: caching the full Ads DataFrame serializes
+    # and copies hundreds of MB. Session state keeps one in-process copy.
+    bd_key = (
+        st.session_state.get("_ads_file_signature"),
+        st.session_state.get("_vendor_file_signature"),
+    )
+    if st.session_state.get("_breakdowns_key") != bd_key:
+        with st.spinner("⚙️ Preparing forecast data…"):
+            st.session_state["_breakdowns"] = _compute_breakdowns(ads_df, vendor_df)
+            st.session_state["_breakdowns_key"] = bd_key
+    bd = st.session_state.get("_breakdowns", {})
+    campaign_df    = bd.get("campaign_df", pd.DataFrame())
+    asin_ads_df    = bd.get("asin_ads_df", pd.DataFrame())
+    asin_vendor_df = bd.get("asin_vendor_df", pd.DataFrame())
+    merged_asin_df = _cached_merge_asin(asin_ads_df, asin_vendor_df) if not ads_df.attrs.get("forecast_only", False) else pd.DataFrame()
+    match_df       = bd.get("match_df", pd.DataFrame())
+    prod_intel     = bd.get("prod_intel")
+    bid_df         = bd.get("bid_df", pd.DataFrame())
+    ad_prod_df     = bd.get("ad_prod_df", pd.DataFrame())
+    trend_df       = bd.get("trend_df", pd.DataFrame())
     t_summary      = _cached_trend_summary(trend_df)
-    prod_trend_df  = bd["prod_trend_df"]
+    prod_trend_df  = bd.get("prod_trend_df", pd.DataFrame())
 
-    # ── Health scores — pre-computed (fast, cached) ──────────────────────────
-    health_df = _compute_asin_health(asin_ads_df, merged_asin_df)
+    large_forecast_mode = bool(ads_df is not None and ads_df.attrs.get("forecast_only", False))
 
-    # ── Tabs ────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Key Metrics",
-        "📦 Product Intelligence",
-        "📅 Trend Analysis",
-        "📈 Forecast & Media Plan",
-        "⚙️ How It Works",
-    ])
+    # Large 250MB+ Ads reports intentionally open a compact leadership workflow.
+    # Detailed search-term/product tabs would require columns we deliberately
+    # excluded to keep memory predictable.
+    if large_forecast_mode:
+        tab1, tab4, tab5 = st.tabs([
+            "📊 Key Metrics",
+            "📈 Forecast & Media Plan",
+            "⚙️ How It Works",
+        ])
+    else:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Key Metrics",
+            "📦 Product Intelligence",
+            "📅 Trend Analysis",
+            "📈 Forecast & Media Plan",
+            "⚙️ How It Works",
+        ])
 
     with tab1:
         render_metrics_dashboard(ads_metrics, vendor_metrics)
 
-    with tab2:
-        _prod_intel  = _cached_product_intelligence(ads_df) if ads_df is not None else {}
-        _st_insights = _cached_search_term_analysis(ads_df) if ads_df is not None else {}
-        render_product_tab(_prod_intel, ad_prod_df, bid_df, match_df)
+    if not large_forecast_mode:
+        with tab2:
+            _prod_intel  = _cached_product_intelligence(ads_df) if ads_df is not None else {}
+            _st_insights = _cached_search_term_analysis(ads_df) if ads_df is not None else {}
+            render_product_tab(_prod_intel, ad_prod_df, bid_df, match_df)
 
-    with tab3:
-        render_trend_tab(trend_df, t_summary, prod_trend_df)
+        with tab3:
+            render_trend_tab(trend_df, t_summary, prod_trend_df)
 
     scenarios = []
     with tab4:
