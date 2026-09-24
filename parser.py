@@ -615,9 +615,25 @@ def detect_report_type(uploaded_file) -> str:
         import io as _io
         name = uploaded_file.name.lower()
         uploaded_file.seek(0)
-        if name.endswith(".csv"):
-            header_df = pd.read_csv(uploaded_file, nrows=0, dtype=str,
-                                    encoding="utf-8-sig", on_bad_lines="skip")
+        if name.endswith(".csv") or name.endswith(".csv.gz") or name.endswith(".gz"):
+            if name.endswith(".gz"):
+                header_df = pd.read_csv(uploaded_file, nrows=0, dtype=str,
+                                        compression="gzip", encoding="utf-8-sig",
+                                        on_bad_lines="skip")
+            else:
+                header_df = pd.read_csv(uploaded_file, nrows=0, dtype=str,
+                                        encoding="utf-8-sig", on_bad_lines="skip")
+        elif name.endswith(".zip"):
+            with zipfile.ZipFile(uploaded_file) as zf:
+                csv_names = [n for n in zf.namelist()
+                             if not n.endswith("/") and n.lower().endswith((".csv", ".csv.gz"))]
+                if not csv_names:
+                    raise ValueError("ZIP must contain a CSV or CSV.GZ report.")
+                csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+                with zf.open(csv_names[0]) as f:
+                    header_df = pd.read_csv(f, nrows=0, dtype=str,
+                                            compression="gzip" if csv_names[0].lower().endswith(".gz") else None,
+                                            encoding="utf-8-sig", on_bad_lines="skip")
         else:
             raw = uploaded_file.read()
             uploaded_file.seek(0)
