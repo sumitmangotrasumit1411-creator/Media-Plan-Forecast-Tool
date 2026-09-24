@@ -79,7 +79,7 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
     if still_na.any():
         raw = s.loc[still_na]
 
-        iso_token = raw.str.extract(r"(\\d{4}[-/]\\d{1,2}[-/]\\d{1,2})", expand=False)
+        iso_token = raw.str.extract(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", expand=False)
         iso_token = iso_token.str.replace("/", "-", regex=False)
         parsed_iso = pd.to_datetime(iso_token, errors="coerce")
         result.loc[still_na] = parsed_iso
@@ -90,7 +90,7 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
     if still_na.any():
         raw = s.loc[still_na]
         first_date = raw.str.extract(
-            r"([A-Za-z]{3,9}\\s+\\d{1,2}(?:,)?\\s+\\d{4})",
+            r"([A-Za-z]{3,9}\s+\d{1,2}(?:,)?\s+\d{4})",
             expand=False,
         )
         result.loc[still_na] = pd.to_datetime(first_date, errors="coerce")
