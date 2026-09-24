@@ -222,11 +222,24 @@ button[data-testid="collapsedControl"]:hover {
     color: #1e1b4b !important;
     font-weight: 700 !important;
     opacity: 1 !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    word-break: break-all !important;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] *,
 [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] {
     color: #1e1b4b !important;
     opacity: 1 !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploaderFileName"] > div,
+[data-testid="stSidebar"] [data-testid="stFileUploaderFileName"] span {
+    max-width: none !important;
+    width: auto !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    word-break: break-all !important;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
     background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
