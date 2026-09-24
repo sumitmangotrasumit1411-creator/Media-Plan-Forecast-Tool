@@ -15,9 +15,9 @@ Performance notes  (Phase 3 update)
 * _clean_numeric: instead of a Python for-loop over every column, the
   known _NUMERIC_COLUMNS are batch-processed as a subset DataFrame in one
   vectorized str.replace + to_numeric pass (one C-level apply per batch).
-* dtype=str is retained — pyarrow reads CSV columns as string type by
-  default when dtype_backend="numpy_nullable" is not requested, so no
-  behavioral change for callers.
+* Large CSVs use PyArrow-backed dtypes when available. This substantially
+  reduces RAM versus a Python-object string DataFrame while preserving the
+  canonical schema after numeric/text normalisation.
 * infer_datetime_format=True removed — deprecated since pandas 2.0 and a
   no-op in 2.2+; replaced with explicit format= strings where needed.
 """
@@ -308,20 +308,33 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
     rather than a Python loop.  Object columns outside the known set fall
     through to the heuristic path as before.
     """
-    # ── Fast batch path: process all known numeric columns at once ───────────
-    known_present = [c for c in _NUMERIC_COLUMNS if c in df.columns and df[c].dtype == object]
-    if known_present:
-        # One vectorized pass per column via apply (C-level, no Python loop per row)
-        df[known_present] = df[known_present].apply(
-            lambda s: pd.to_numeric(s.str.replace(_STRIP_RE, "", regex=True).str.strip(), errors="coerce")
-        )
+    # ── Keep text columns as compact Arrow strings ──────────────────────────
+    # Python object strings can consume several times the raw CSV size.
+    for col in _TEXT_COLUMNS:
+        if col not in df.columns:
+            continue
+        try:
+            df[col] = df[col].astype("string[pyarrow]" if _HAVE_PYARROW else "string")
+        except Exception:
+            df[col] = df[col].astype(str)
 
-    # Also ensure already-numeric known columns are float64 (they may be int from Arrow)
-    known_numeric_nonobj = [c for c in _NUMERIC_COLUMNS if c in df.columns and df[c].dtype != object]
-    if known_numeric_nonobj:
-        df[known_numeric_nonobj] = df[known_numeric_nonobj].apply(
-            lambda s: pd.to_numeric(s, errors="coerce")
-        )
+    # ── Fast numeric path ───────────────────────────────────────────────────
+    # PyArrow-backed readers return string/int/double extension dtypes, so
+    # don't rely on dtype == object here.
+    for col in _NUMERIC_COLUMNS:
+        if col not in df.columns:
+            continue
+        series = df[col]
+        try:
+            if pd.api.types.is_string_dtype(series.dtype) or series.dtype == object:
+                series = series.astype("string")
+                series = series.str.replace(_STRIP_RE, "", regex=True).str.strip()
+            kwargs = {"errors": "coerce"}
+            if _HAVE_PYARROW:
+                kwargs["dtype_backend"] = "pyarrow"
+            df[col] = pd.to_numeric(series, **kwargs)
+        except Exception:
+            df[col] = pd.to_numeric(series, errors="coerce")
 
     # ── Heuristic path: unknown object columns that look like numbers ─────────
     # Skip entirely for large frames (>200k rows) — the canonical _NUMERIC_COLUMNS
@@ -332,12 +345,12 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
             if col in _TEXT_COLUMNS or col in _NUMERIC_COLUMNS:
                 continue
             series = df[col]
-            if series.dtype != object:
+            if not (series.dtype == object or pd.api.types.is_string_dtype(series.dtype)):
                 continue
-            sample = series.dropna().head(200)   # sample 200 rows, not entire column
+            sample = series.dropna().head(200).astype("string")
             if sample.empty or not sample.str.contains(r"[\$\%\,]", regex=True).any():
                 continue
-            cleaned = series.str.replace(_STRIP_RE, "", regex=True).str.strip()
+            cleaned = series.astype("string").str.replace(_STRIP_RE, "", regex=True).str.strip()
             numeric = pd.to_numeric(cleaned, errors="coerce")
             if numeric.notna().sum() >= series.notna().sum() * 0.5:
                 df[col] = numeric
@@ -352,10 +365,10 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
 def _read_csv_c(file_obj, encoding: str) -> pd.DataFrame:
     """Read CSV with the pandas C engine (chunked to keep peak memory bounded)."""
     kwargs = dict(
-        dtype=str,
         low_memory=False,
         na_values=["", "N/A", "n/a", "--", "—"],
         keep_default_na=False,
+        dtype_backend="pyarrow" if _HAVE_PYARROW else "numpy_nullable",
     )
     chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
     return pd.concat(list(chunks), ignore_index=True, copy=False)
@@ -371,10 +384,10 @@ def _read_csv_fast(file_obj, encoding: str = "utf-8") -> pd.DataFrame:
     ensures we always load the file successfully.
     """
     kwargs = dict(
-        dtype=str,
         low_memory=False,
         na_values=["", "N/A", "n/a", "--", "—"],
         keep_default_na=False,
+        dtype_backend="pyarrow" if _HAVE_PYARROW else "numpy_nullable",
     )
     if _HAVE_PYARROW:
         try:
