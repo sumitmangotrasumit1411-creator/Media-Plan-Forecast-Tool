@@ -759,7 +759,7 @@ def sidebar():
     ads_file = st.sidebar.file_uploader(
         "Amazon Advertising Report",
         type=["csv", "xlsx", "xls"],
-        max_upload_size=3072,
+        max_upload_size=750,
         help="Export from Amazon Ads Console: Campaign Manager → Reports (up to 3GB)",
         label_visibility="collapsed",
     )
@@ -771,7 +771,7 @@ def sidebar():
     vendor_file = st.sidebar.file_uploader(
         "Vendor Central ASIN Sales Report",
         type=["csv", "xlsx", "xls"],
-        max_upload_size=3072,
+        max_upload_size=750,
         help="Export from Vendor Central → Analytics → Sales Diagnostics (up to 3GB)",
         label_visibility="collapsed",
     )
@@ -907,6 +907,18 @@ def main():
 
     ads_file, vendor_file, growth_options, channel_split, custom_targets = sidebar()
 
+    # Release parsed report frames when the corresponding uploader is cleared.
+    # This matters for very large reports because UploadedFile objects live in
+    # Streamlit session memory.
+    if not ads_file:
+        st.session_state.pop("_ads_df", None)
+        st.session_state.pop("_ads_metrics", None)
+        st.session_state.pop("_ads_file_signature", None)
+    if not vendor_file:
+        st.session_state.pop("_vendor_df", None)
+        st.session_state.pop("_vendor_metrics", None)
+        st.session_state.pop("_vendor_file_signature", None)
+
     # ── Welcome screen ──────────────────────────────────────────────────────
     if not ads_file and not vendor_file:
         st.markdown("""
@@ -924,7 +936,7 @@ def main():
                 <div class="welcome-card-title">Upload Amazon Ads Report</div>
                 <div class="welcome-card-desc">
                     Export from Ads Console → Campaign Manager → Reports.
-                    Supports CSV &amp; XLSX up to 2GB.
+                    Supports CSV &amp; XLSX up to 750MB.
                 </div>
                 <span class="welcome-card-tag">SP · SB · SD campaigns</span>
             </div>
