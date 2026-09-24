@@ -447,50 +447,48 @@ def _read_file(uploaded_file) -> pd.DataFrame:
     )
 
     if name.endswith(".zip"):
+        # Stream the selected CSV directly from the ZIP. The previous
+        # implementation copied the ZIP to disk and then fully extracted the
+        # 600MB+ CSV before parsing, creating a large I/O and memory spike on
+        # Community Cloud. We only inspect the ZIP directory, then stream the
+        # largest CSV member through pandas.
         uploaded_file.seek(0)
-        with tempfile.TemporaryDirectory(prefix="amazon_report_") as tmp:
-            zip_path = os.path.join(tmp, "upload.zip")
-            with open(zip_path, "wb") as out:
-                while True:
-                    chunk = uploaded_file.read(8 * 1024 * 1024)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+        with zipfile.ZipFile(uploaded_file) as zf:
+            csv_names = [
+                n for n in zf.namelist()
+                if not n.endswith("/") and n.lower().endswith((".csv", ".csv.gz"))
+            ]
+            if not csv_names:
+                raise ValueError("ZIP must contain a CSV or CSV.GZ Amazon report.")
 
-            with zipfile.ZipFile(zip_path) as zf:
-                csv_names = [
-                    n for n in zf.namelist()
-                    if not n.endswith("/") and n.lower().endswith((".csv", ".csv.gz"))
-                ]
-                if not csv_names:
-                    raise ValueError("ZIP must contain a CSV or CSV.GZ Amazon report.")
-                csv_names.sort(
-                    key=lambda n: zf.getinfo(n).file_size,
-                    reverse=True,
-                )
-                inner_name = csv_names[0]
-                forecast_only = forecast_only or (
-                    zf.getinfo(inner_name).file_size > 250 * 1024 * 1024
-                )
-                is_inner_gz = inner_name.lower().endswith(".gz")
-                extracted = os.path.join(
-                    tmp, "report.csv.gz" if is_inner_gz else "report.csv"
-                )
-                with zf.open(inner_name) as src, open(extracted, "wb") as dst:
-                    while True:
-                        chunk = src.read(8 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        dst.write(chunk)
+            csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+            inner_name = csv_names[0]
+            inner_info = zf.getinfo(inner_name)
+            forecast_only = forecast_only or (
+                inner_info.file_size > 250 * 1024 * 1024
+            )
+            is_inner_gz = inner_name.lower().endswith(".gz")
 
-            if is_inner_gz:
-                with gzip.open(extracted, "rb") as f:
-                    usecols = _forecast_usecols_from_header(f) if forecast_only else None
-                    return _read_csv_fast(f, encoding="utf-8-sig", usecols=usecols)
+            # Open once to discover forecast columns, then reopen for the
+            # actual parse because the first read advances the stream.
+            usecols = None
+            if forecast_only:
+                with zf.open(inner_name) as header_stream:
+                    if is_inner_gz:
+                        with gzip.GzipFile(fileobj=header_stream) as gz:
+                            usecols = _forecast_usecols_from_header(gz)
+                    else:
+                        usecols = _forecast_usecols_from_header(header_stream)
 
-            with open(extracted, "rb") as f:
-                usecols = _forecast_usecols_from_header(f) if forecast_only else None
-                return _read_csv_fast(f, encoding="utf-8-sig", usecols=usecols)
+            with zf.open(inner_name) as data_stream:
+                if is_inner_gz:
+                    with gzip.GzipFile(fileobj=data_stream) as gz:
+                        return _read_csv_fast(
+                            gz, encoding="utf-8-sig", usecols=usecols
+                        )
+                return _read_csv_fast(
+                    data_stream, encoding="utf-8-sig", usecols=usecols
+                )
 
     if name.endswith(".gz"):
         uploaded_file.seek(0)
