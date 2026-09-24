@@ -77,6 +77,7 @@ AD_COLUMN_ALIASES: dict = {
     "ad spend": "spend",
     "total spend": "spend",
     "total cost": "spend",
+    "cost": "spend",
     "campaign budget amount": "campaign_budget",
     # Sales (ad-attributed)
     "sales": "ad_sales",
