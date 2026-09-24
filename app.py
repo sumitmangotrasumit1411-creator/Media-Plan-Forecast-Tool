@@ -621,7 +621,7 @@ def _load_vendor(file):
     return df, extract_vendor_metrics(df)
 
 
-_PARSER_CACHE_VERSION = "2026-09-24-date-fields-v5"
+_PARSER_CACHE_VERSION = "2026-09-24-date-fields-v8"
 
 def _file_signature(file):
     """Cheap identity for an UploadedFile; avoids hashing hundreds of MB.
