@@ -1201,7 +1201,7 @@ def main():
                 monthly_df=_monthly_export,
             )
             st.download_button(
-                label="⬇️  Download Excel Media Plan (7 sheets)",
+                label="⬇️  Download Excel Media Plan (3 sheets)",
                 data=excel_bytes,
                 file_name="media_plan_forecast.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1211,14 +1211,10 @@ def main():
 
     with col_info:
         st.markdown("""
-        The downloaded workbook includes **7 sheets**:
+        The downloaded workbook includes **3 sheets**:
         - **Executive Summary** — all key metrics at a glance
         - **Scenarios** — full scenario comparison table
-        - **Campaign Recommendations** — per-campaign budget actions
-        - **Campaign Performance** — detailed campaign data
-        - **ASIN Analysis** — blended ads + vendor view per ASIN
-        - **ASIN Health Scores** *(Phase 5)* — tier-colour-coded health scorecard
-        - **Monthly Media Plan** *(Phase 5)* — 12-month spend calendar with event highlights
+        - **Monthly Media Plan** — 12-month spend calendar with actuals vs projected plan
         """)
 
     # ── Footer ───────────────────────────────────────────────────────────────
