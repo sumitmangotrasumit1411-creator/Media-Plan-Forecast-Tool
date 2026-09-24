@@ -667,6 +667,23 @@ def parse_amazon_ads_report(uploaded_file) -> pd.DataFrame:
     df = _normalise_columns(df, AD_COLUMN_ALIASES)
     df = _normalise_campaign_type(df)
     df = _clean_numeric(df)
+    _large_input = bool(
+        getattr(uploaded_file, "size", 0)
+        and getattr(uploaded_file, "size", 0) > 250 * 1024 * 1024
+    )
+    try:
+        if str(getattr(uploaded_file, "name", "")).lower().endswith(".zip"):
+            uploaded_file.seek(0)
+            with zipfile.ZipFile(uploaded_file) as _zf:
+                _large_input = _large_input or any(
+                    i.file_size > 250 * 1024 * 1024
+                    for i in _zf.infolist()
+                    if not i.is_dir() and i.filename.lower().endswith((".csv", ".csv.gz"))
+                )
+    except Exception:
+        pass
+    if _large_input:
+        df.attrs["forecast_only"] = True
     return df
 
 
