@@ -164,6 +164,8 @@ AD_COLUMN_ALIASES: dict = {
     "campaign id": "campaign_id",
     "campaign bid strategy": "bid_strategy",
     "date range": "date_range",
+    "reporting period": "date_range",
+    "reporting period (date range)": "date_range",
     # Direct date columns
     "start date": "start_date",
     "end date": "end_date",
