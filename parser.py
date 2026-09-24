@@ -371,63 +371,81 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # CSV reader — PyArrow fast path with C-engine fallback
 # ---------------------------------------------------------------------------
 
+def _forecast_usecols_from_header(file_obj, encoding: str = "utf-8-sig"):
+    """Return original headers that map to forecast-required canonical fields."""
+    try:
+        file_obj.seek(0)
+        header = pd.read_csv(file_obj, nrows=0, dtype=str, encoding=encoding)
+        file_obj.seek(0)
+        selected = [
+            col for col in header.columns
+            if AD_COLUMN_ALIASES.get(
+                str(col).strip().lower(),
+                str(col).strip().lower()
+            ) in _FORECAST_COLUMNS
+        ]
+        return selected or None
+    except Exception:
+        try:
+            file_obj.seek(0)
+        except Exception:
+            pass
+        return None
+
+
 def _read_csv_c(file_obj, encoding: str, usecols=None) -> pd.DataFrame:
-    """Read CSV with the pandas C engine (chunked to keep peak memory bounded)."""
+    """Read CSV with the pandas C engine in chunks."""
     kwargs = dict(
         low_memory=False,
         na_values=["", "N/A", "n/a", "--", "—"],
         keep_default_na=False,
         dtype_backend="pyarrow" if _HAVE_PYARROW else "numpy_nullable",
     )
-    if usecols is not None:\n        kwargs["usecols"] = usecols\n    chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
+    if usecols is not None:
+        kwargs["usecols"] = usecols
+    chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
     return pd.concat(list(chunks), ignore_index=True, copy=False)
 
 
 def _read_csv_fast(file_obj, encoding: str = "utf-8", usecols=None) -> pd.DataFrame:
-    """
-    Try the PyArrow engine first (3-10x faster); fall back to the C engine on
-    any failure (encoding issues, BOM markers, structural quirks in Amazon exports).
-
-    PyArrow is strict about encodings — it rejects files with BOM or Windows
-    code-page characters that the C engine handles transparently.  The fallback
-    ensures we always load the file successfully.
-    """
+    """Try PyArrow first, then fall back to chunked C-engine parsing."""
     kwargs = dict(
         low_memory=False,
         na_values=["", "N/A", "n/a", "--", "—"],
         keep_default_na=False,
         dtype_backend="pyarrow" if _HAVE_PYARROW else "numpy_nullable",
     )
+    if usecols is not None:
+        kwargs["usecols"] = usecols
     if _HAVE_PYARROW:
         try:
             return pd.read_csv(file_obj, encoding=encoding, engine="pyarrow", **kwargs)
         except Exception:
-            # PyArrow failed (encoding, BOM, structural issue) — rewind and use C engine
             try:
                 file_obj.seek(0)
             except Exception:
                 pass
-    # C engine: chunked reads to keep peak RAM bounded on 400MB+ files
     return _read_csv_c(file_obj, encoding, usecols=usecols)
 
 
 def _read_file(uploaded_file) -> pd.DataFrame:
     """
-    Read an uploaded Streamlit file object (CSV or XLSX) into a DataFrame.
+    Read an uploaded Streamlit file object.
 
-    Encoding ladder: utf-8-sig (handles BOM) → utf-8 → latin-1 → cp1252.
-    Each attempt uses PyArrow first, then C engine.  The first successful
-    parse is returned.
+    Files above 250MB use a forecast-first projection that loads only the
+    columns required by the forecast engine. This keeps the leadership
+    workflow responsive without changing the forecast calculations.
     """
     name = uploaded_file.name.lower()
+    forecast_only = bool(
+        getattr(uploaded_file, "size", 0)
+        and getattr(uploaded_file, "size", 0) > 250 * 1024 * 1024
+    )
 
-    # Large Amazon exports are much more reliable when uploaded compressed.
-    # Streamlit Cloud must hold the browser upload in memory; a 600MB raw CSV
-    # can therefore exhaust the Community Cloud memory ceiling before parsing.
-    # For .zip/.gz we decompress to a local temporary file and parse from disk.
     if name.endswith(".zip"):
         uploaded_file.seek(0)
         with tempfile.TemporaryDirectory(prefix="amazon_report_") as tmp:
@@ -438,6 +456,7 @@ def _read_file(uploaded_file) -> pd.DataFrame:
                     if not chunk:
                         break
                     out.write(chunk)
+
             with zipfile.ZipFile(zip_path) as zf:
                 csv_names = [
                     n for n in zf.namelist()
@@ -445,23 +464,39 @@ def _read_file(uploaded_file) -> pd.DataFrame:
                 ]
                 if not csv_names:
                     raise ValueError("ZIP must contain a CSV or CSV.GZ Amazon report.")
-                if len(csv_names) > 1:
-                    # Prefer the largest CSV — Amazon exports normally contain
-                    # one report and may include small metadata files.
-                    csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-                is_inner_gz = csv_names[0].lower().endswith(".gz")\n            extracted = os.path.join(tmp, "report.csv.gz" if is_inner_gz else "report.csv")
-                with zf.open(csv_names[0]) as src, open(extracted, "wb") as dst:
+                csv_names.sort(
+                    key=lambda n: zf.getinfo(n).file_size,
+                    reverse=True,
+                )
+                inner_name = csv_names[0]
+                forecast_only = forecast_only or (
+                    zf.getinfo(inner_name).file_size > 250 * 1024 * 1024
+                )
+                is_inner_gz = inner_name.lower().endswith(".gz")
+                extracted = os.path.join(
+                    tmp, "report.csv.gz" if is_inner_gz else "report.csv"
+                )
+                with zf.open(inner_name) as src, open(extracted, "wb") as dst:
                     while True:
                         chunk = src.read(8 * 1024 * 1024)
                         if not chunk:
                             break
                         dst.write(chunk)
+
+            if is_inner_gz:
+                with gzip.open(extracted, "rb") as f:
+                    usecols = _forecast_usecols_from_header(f) if forecast_only else None
+                    return _read_csv_fast(f, encoding="utf-8-sig", usecols=usecols)
+
             with open(extracted, "rb") as f:
-                return _read_csv_fast(f, encoding="utf-8-sig")
+                usecols = _forecast_usecols_from_header(f) if forecast_only else None
+                return _read_csv_fast(f, encoding="utf-8-sig", usecols=usecols)
 
     if name.endswith(".gz"):
         uploaded_file.seek(0)
-        with tempfile.NamedTemporaryFile(prefix="amazon_report_", suffix=".csv", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(
+            prefix="amazon_report_", suffix=".csv.gz", delete=False
+        ) as tmp:
             tmp_path = tmp.name
             while True:
                 chunk = uploaded_file.read(8 * 1024 * 1024)
@@ -470,7 +505,8 @@ def _read_file(uploaded_file) -> pd.DataFrame:
                 tmp.write(chunk)
         try:
             with gzip.open(tmp_path, "rb") as f:
-                return _read_csv_fast(f, encoding="utf-8-sig")
+                usecols = _forecast_usecols_from_header(f) if forecast_only else None
+                return _read_csv_fast(f, encoding="utf-8-sig", usecols=usecols)
         finally:
             try:
                 os.unlink(tmp_path)
@@ -478,16 +514,21 @@ def _read_file(uploaded_file) -> pd.DataFrame:
                 pass
 
     if name.endswith(".csv"):
-        # utf-8-sig strips BOM automatically; covers the majority of Amazon exports
         for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
             try:
                 uploaded_file.seek(0)
-                return _read_csv_fast(uploaded_file, encoding=enc, usecols=_forecast_usecols_from_header(uploaded_file, encoding=enc) if forecast_only else None)
+                usecols = (
+                    _forecast_usecols_from_header(uploaded_file, encoding=enc)
+                    if forecast_only else None
+                )
+                return _read_csv_fast(
+                    uploaded_file,
+                    encoding=enc,
+                    usecols=usecols,
+                )
             except UnicodeDecodeError:
                 continue
             except Exception as exc:
-                # Non-encoding error on C engine path — try next encoding,
-                # but if this is the last one, let it propagate
                 last_exc = exc
                 continue
         raise ValueError(
