@@ -256,6 +256,14 @@ _TEXT_COLUMNS: frozenset = frozenset({
     "sku", "asin", "account_id", "campaign_id",
 })
 
+# Large-file forecast projection: keep only fields required for forecasting.
+_FORECAST_COLUMNS: frozenset = frozenset({
+    "impressions", "clicks", "spend", "ad_sales", "ad_orders",
+    "ad_orders_ntb", "ad_sales_longterm", "sales_ntb",
+    "campaign_name", "campaign_type", "ad_group_name", "targeting",
+    "asin", "match_type", "bid_strategy", "report_date", "week_date", "month_date",
+})
+
 # Canonical numeric columns — always coerced; skip the heuristic check
 _NUMERIC_COLUMNS: frozenset = frozenset({
     "impressions", "viewable_impressions", "clicks", "spend", "ad_sales",
@@ -366,7 +374,7 @@ def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
 # CSV reader — PyArrow fast path with C-engine fallback
 # ---------------------------------------------------------------------------
 
-def _read_csv_c(file_obj, encoding: str) -> pd.DataFrame:
+def _read_csv_c(file_obj, encoding: str, usecols=None) -> pd.DataFrame:
     """Read CSV with the pandas C engine (chunked to keep peak memory bounded)."""
     kwargs = dict(
         low_memory=False,
@@ -374,11 +382,11 @@ def _read_csv_c(file_obj, encoding: str) -> pd.DataFrame:
         keep_default_na=False,
         dtype_backend="pyarrow" if _HAVE_PYARROW else "numpy_nullable",
     )
-    chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
+    if usecols is not None:\n        kwargs["usecols"] = usecols\n    chunks = pd.read_csv(file_obj, encoding=encoding, chunksize=200_000, **kwargs)
     return pd.concat(list(chunks), ignore_index=True, copy=False)
 
 
-def _read_csv_fast(file_obj, encoding: str = "utf-8") -> pd.DataFrame:
+def _read_csv_fast(file_obj, encoding: str = "utf-8", usecols=None) -> pd.DataFrame:
     """
     Try the PyArrow engine first (3-10x faster); fall back to the C engine on
     any failure (encoding issues, BOM markers, structural quirks in Amazon exports).
@@ -403,7 +411,7 @@ def _read_csv_fast(file_obj, encoding: str = "utf-8") -> pd.DataFrame:
             except Exception:
                 pass
     # C engine: chunked reads to keep peak RAM bounded on 400MB+ files
-    return _read_csv_c(file_obj, encoding)
+    return _read_csv_c(file_obj, encoding, usecols=usecols)
 
 
 def _read_file(uploaded_file) -> pd.DataFrame:
@@ -441,7 +449,7 @@ def _read_file(uploaded_file) -> pd.DataFrame:
                     # Prefer the largest CSV — Amazon exports normally contain
                     # one report and may include small metadata files.
                     csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
-                extracted = os.path.join(tmp, "report.csv")
+                is_inner_gz = csv_names[0].lower().endswith(".gz")\n            extracted = os.path.join(tmp, "report.csv.gz" if is_inner_gz else "report.csv")
                 with zf.open(csv_names[0]) as src, open(extracted, "wb") as dst:
                     while True:
                         chunk = src.read(8 * 1024 * 1024)
@@ -474,7 +482,7 @@ def _read_file(uploaded_file) -> pd.DataFrame:
         for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
             try:
                 uploaded_file.seek(0)
-                return _read_csv_fast(uploaded_file, encoding=enc)
+                return _read_csv_fast(uploaded_file, encoding=enc, usecols=_forecast_usecols_from_header(uploaded_file, encoding=enc) if forecast_only else None)
             except UnicodeDecodeError:
                 continue
             except Exception as exc:
