@@ -1009,7 +1009,12 @@ def main():
     _vendor_file = vendor_file
 
     if ads_file and vendor_file:
-        ads_detected    = detect_report_type(ads_file)
+        ads_name = getattr(ads_file, "name", "").lower()
+        ads_detected = (
+            "ads"
+            if ads_name.endswith((".zip", ".gz", ".csv.gz"))
+            else detect_report_type(ads_file)
+        )
         vendor_detected = detect_report_type(vendor_file)
         ads_file.seek(0)
         vendor_file.seek(0)
@@ -1030,7 +1035,12 @@ def main():
                 "Please upload your Vendor Central report (with OPS / Glance Views columns) in the bottom slot."
             )
     elif ads_file:
-        detected = detect_report_type(ads_file)
+        ads_name = getattr(ads_file, "name", "").lower()
+        detected = (
+            "ads"
+            if ads_name.endswith((".zip", ".gz", ".csv.gz"))
+            else detect_report_type(ads_file)
+        )
         ads_file.seek(0)
         if detected == "vendor":
             _ads_file, _vendor_file = None, ads_file
