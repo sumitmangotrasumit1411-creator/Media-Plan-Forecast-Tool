@@ -1133,6 +1133,15 @@ def main():
 
     large_forecast_mode = bool(ads_df is not None and ads_df.attrs.get("forecast_only", False))
 
+    # Build the optional ASIN health score table once. Large forecast-mode
+    # uploads intentionally omit the detailed ASIN fields, so use an empty
+    # frame there; exporter.py already treats this sheet as optional.
+    health_df = (
+        _compute_asin_health(asin_ads_df, merged_asin_df)
+        if not large_forecast_mode
+        else pd.DataFrame()
+    )
+
     # Large 250MB+ Ads reports intentionally open a compact leadership workflow.
     # Detailed search-term/product tabs would require columns we deliberately
     # excluded to keep memory predictable.
