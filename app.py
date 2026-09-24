@@ -216,6 +216,18 @@ button[data-testid="collapsedControl"]:hover {
     border-color: #f97316 !important; background: rgba(249,115,22,0.08) !important;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * { color: #c7d2fe !important; }
+/* Uploaded-file row: keep the selected filename readable on the white file card. */
+[data-testid="stSidebar"] [data-testid="stFileUploaderFileName"],
+[data-testid="stSidebar"] [data-testid="stFileUploaderFileName"] * {
+    color: #1e1b4b !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploaderFile"] *,
+[data-testid="stSidebar"] [data-testid="stFileUploaderFile"] {
+    color: #1e1b4b !important;
+    opacity: 1 !important;
+}
 [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
     background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
     color: #ffffff !important; border-radius: 7px !important;
@@ -607,10 +619,9 @@ def _file_signature(file):
     )
 
 
-@st.cache_data(show_spinner=False)
 def _compute_breakdowns(ads_df, vendor_df):
     """
-    All heavy breakdown computations in one cached call.
+    All heavy breakdown computations in one in-process call.
 
     Performance (Phase 5.1):
     - Bulk DuckDB path: opens ONE connection and runs all 5 groupbys
@@ -675,6 +686,9 @@ def _compute_breakdowns(ads_df, vendor_df):
 
     # ── Trend — parse dates once, reuse for both functions ───────────────────
     trend_df      = build_trend_df(_ads, freq="M")
+    # The monthly media plan uses this trend frame as the single source for
+    # Amazon Ads actual spend/sales. If no usable date column exists, the
+    # table will correctly remain blank rather than borrowing Vendor data.
     prod_trend_df = ad_product_trend(_ads, freq="M")
 
     # ── Wasted spend — simple mask, very fast ────────────────────────────────
@@ -1111,6 +1125,7 @@ def main():
     # Do NOT use st.cache_data here: caching the full Ads DataFrame serializes
     # and copies hundreds of MB. Session state keeps one in-process copy.
     bd_key = (
+        "actuals-v3",
         st.session_state.get("_ads_file_signature"),
         st.session_state.get("_vendor_file_signature"),
     )
