@@ -143,14 +143,26 @@ button[data-testid="collapsedControl"]:hover {
    BaseWeb input value nodes change their DOM tag between releases. */
 [data-testid="stSidebar"],
 [data-testid="stSidebar"] *,
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] input *,
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] span,
 [data-testid="stSidebar"] div,
 [data-testid="stSidebar"] label {
     color: #ffffff !important;
     caret-color: #ffffff !important;
+}
+
+/* Number inputs: keep the entered value readable on the light input background. */
+[data-testid="stSidebar"] input[type="number"],
+[data-testid="stSidebar"] input[type="text"] {
+    color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
+    caret-color: #111827 !important;
+}
+[data-testid="stSidebar"] input[type="number"]::placeholder,
+[data-testid="stSidebar"] input[type="text"]::placeholder {
+    color: #6b7280 !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    opacity: 1 !important;
 }
 
 [data-testid="stSidebar"] .stMarkdown h1,
