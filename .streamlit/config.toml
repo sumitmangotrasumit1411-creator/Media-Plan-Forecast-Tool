@@ -1,6 +1,6 @@
 [server]
-maxUploadSize    = 750          # 3 GB
-maxMessageSize   = 768          # 1 GB WebSocket message limit for large uploads
+maxUploadSize    = 750          # 750 MB
+maxMessageSize   = 768          # 768 MB WebSocket message limit for large uploads
 enableCORS       = false
 enableXsrfProtection = true
 enableWebsocketCompression = false
