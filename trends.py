@@ -71,10 +71,29 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
         keep = (ends - starts).dt.days < 350
         result.loc[mn_valid] = starts.where(keep)
 
-    # ── Single-date fallback ────────────────────────────────────────────────
-    still_na = result.isna() & iso[0].isna() & mn[0].isna()
+    # ── Numeric date fallback ───────────────────────────────────────────────
+    # Amazon Ads exports can use ISO timestamps, slash-separated dates, or
+    # date ranges with extra time text. Extract the first date token rather
+    # than relying only on the two strict range regexes above.
+    still_na = result.isna()
     if still_na.any():
-        result.loc[still_na] = pd.to_datetime(s.loc[still_na], errors="coerce")
+        raw = s.loc[still_na]
+
+        iso_token = raw.str.extract(r"(\\d{4}[-/]\\d{1,2}[-/]\\d{1,2})", expand=False)
+        iso_token = iso_token.str.replace("/", "-", regex=False)
+        parsed_iso = pd.to_datetime(iso_token, errors="coerce")
+        result.loc[still_na] = parsed_iso
+
+    # Final fallback for strings such as "Jan 1 2025 - Jan 31 2025"
+    # or a single human-readable date.
+    still_na = result.isna()
+    if still_na.any():
+        raw = s.loc[still_na]
+        first_date = raw.str.extract(
+            r"([A-Za-z]{3,9}\\s+\\d{1,2}(?:,)?\\s+\\d{4})",
+            expand=False,
+        )
+        result.loc[still_na] = pd.to_datetime(first_date, errors="coerce")
 
     return result
 
