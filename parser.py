@@ -271,10 +271,30 @@ _STRIP_RE = re.compile(r"[\$\%\,]")
 # ---------------------------------------------------------------------------
 
 def _normalise_columns(df: pd.DataFrame, alias_map: dict) -> pd.DataFrame:
-    """Lowercase + strip column names, then map to canonical names."""
-    df.columns = [c.strip().lower() for c in df.columns]
+    """Normalize headers and coalesce duplicate canonical columns.
+
+    Amazon exports can contain multiple source columns that map to the same
+    canonical field (for example both "OPS ($)" and "Ordered Revenue"). Pandas
+    then creates duplicate labels, so df[col] returns a DataFrame instead of a
+    Series and downstream dtype checks fail. Coalesce duplicates left-to-right.
+    """
+    df.columns = [str(c).strip().lower() for c in df.columns]
     rename = {col: alias_map[col] for col in df.columns if col in alias_map}
-    return df.rename(columns=rename)
+    df = df.rename(columns=rename)
+
+    if df.columns.duplicated().any():
+        out = {}
+        for col in dict.fromkeys(df.columns):
+            same = df.loc[:, df.columns == col]
+            if same.shape[1] == 1:
+                out[col] = same.iloc[:, 0]
+            else:
+                # Empty source cells should not override a populated duplicate.
+                same = same.replace("", np.nan)
+                out[col] = same.bfill(axis=1).iloc[:, 0]
+        df = pd.DataFrame(out, index=df.index)
+
+    return df
 
 
 def _clean_numeric(df: pd.DataFrame) -> pd.DataFrame:
