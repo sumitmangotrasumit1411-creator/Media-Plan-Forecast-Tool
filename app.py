@@ -578,20 +578,33 @@ hr { border-color: #e0e7ff !important; margin: 20px 0 !important; }
 #  cache object on every rerun, completely defeating caching)
 # ---------------------------------------------------------------------------
 
-@st.cache_data(show_spinner=False)
 def _load_ads(file):
-    """Parse Amazon Ads report + extract metrics. Cached by file identity."""
-    df      = parse_amazon_ads_report(file)
-    metrics = extract_ads_metrics(df)
-    return df, metrics
+    """Parse Amazon Ads report without Streamlit cache serialization.
+    
+    Large uploads can be hundreds of MB. st.cache_data serializes cached
+    DataFrames and can temporarily create another large in-memory copy.
+    Session state is used below so the parsed DataFrame remains in-process
+    without that serialization spike.
+    """
+    df = parse_amazon_ads_report(file)
+    return df, extract_ads_metrics(df)
 
 
-@st.cache_data(show_spinner=False)
 def _load_vendor(file):
-    """Parse Vendor Central report + extract metrics. Cached by file identity."""
-    df      = parse_vendor_central_report(file)
-    metrics = extract_vendor_metrics(df)
-    return df, metrics
+    """Parse Vendor Central report without cache serialization."""
+    df = parse_vendor_central_report(file)
+    return df, extract_vendor_metrics(df)
+
+
+def _file_signature(file):
+    """Cheap identity for an UploadedFile; avoids hashing hundreds of MB."""
+    if file is None:
+        return None
+    return (
+        getattr(file, "name", ""),
+        getattr(file, "size", None),
+        getattr(file, "type", ""),
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -1023,24 +1036,42 @@ def main():
                 "Ads report. It has been parsed as an Ads report automatically."
             )
 
-    with st.spinner("📂 Reading and parsing reports — large files may take 30–60 seconds…"):
+    # Keep parsed data in session state rather than st.cache_data. This is
+    # critical for 500MB+ reports because cache serialization can duplicate
+    # the DataFrame and push Community Cloud over its memory ceiling.
+    with st.spinner("📂 Reading and parsing reports — large files may take a few minutes…"):
         if _ads_file:
             try:
-                ads_df, ads_metrics = _load_ads(_ads_file)
+                ads_key = _file_signature(_ads_file)
+                if st.session_state.get("_ads_file_signature") != ads_key:
+                    # Release any previous large frame before replacing it.
+                    st.session_state.pop("_ads_df", None)
+                    st.session_state.pop("_ads_metrics", None)
+                    st.session_state["_ads_df"], st.session_state["_ads_metrics"] = _load_ads(_ads_file)
+                    st.session_state["_ads_file_signature"] = ads_key
+                ads_df = st.session_state.get("_ads_df")
+                ads_metrics = st.session_state.get("_ads_metrics", {})
                 missing = validate_ads_report(ads_df)
                 if missing:
                     st.warning(f"Amazon Ads report is missing columns: {missing}. Metrics may be partial.")
                 else:
                     st.success(f"✅ Amazon Ads report loaded — {len(ads_df):,} rows, {len(ads_df.columns)} columns")
                 if len(ads_df) > 500_000:
-                    st.info(f"ℹ️ Large report ({len(ads_df):,} rows) — processing may take a moment.")
+                    st.info(f"ℹ️ Large report ({len(ads_df):,} rows) — memory-optimized processing is enabled.")
             except Exception as e:
                 st.error(f"Error reading Amazon Ads report: {e}")
                 ads_df = None
 
         if _vendor_file:
             try:
-                vendor_df, vendor_metrics = _load_vendor(_vendor_file)
+                vendor_key = _file_signature(_vendor_file)
+                if st.session_state.get("_vendor_file_signature") != vendor_key:
+                    st.session_state.pop("_vendor_df", None)
+                    st.session_state.pop("_vendor_metrics", None)
+                    st.session_state["_vendor_df"], st.session_state["_vendor_metrics"] = _load_vendor(_vendor_file)
+                    st.session_state["_vendor_file_signature"] = vendor_key
+                vendor_df = st.session_state.get("_vendor_df")
+                vendor_metrics = st.session_state.get("_vendor_metrics", {})
                 missing_v = validate_vendor_report(vendor_df)
                 if missing_v:
                     st.warning(f"Vendor Central report is missing columns: {missing_v}. Metrics may be partial.")
