@@ -1,5 +1,6 @@
 [server]
 maxUploadSize    = 3072          # 3 GB
+maxMessageSize   = 1024          # 1 GB WebSocket message limit for large uploads
 enableCORS       = false
 enableXsrfProtection = true
 headless         = true          # required for Docker / cloud deployments
