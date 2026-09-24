@@ -709,6 +709,15 @@ def parse_amazon_ads_report(uploaded_file) -> pd.DataFrame:
     df = _normalise_columns(df, AD_COLUMN_ALIASES)
     df = _normalise_campaign_type(df)
     df = _clean_numeric(df)
+
+    # Preserve the report year for Amazon Ads exports whose "Month" field is
+    # numeric (1-12) rather than a full date. Prefer a 4-digit year in the
+    # uploaded filename, e.g. "2025_MoM.csv.zip".
+    _name = str(getattr(uploaded_file, "name", ""))
+    _year_match = re.search(r"(?<!\d)(20\d{2})(?!\d)", _name)
+    if _year_match:
+        df.attrs["source_year"] = int(_year_match.group(1))
+
     _large_input = bool(
         getattr(uploaded_file, "size", 0)
         and getattr(uploaded_file, "size", 0) > 250 * 1024 * 1024
