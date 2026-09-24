@@ -84,6 +84,19 @@ def _parse_date_range_series(series: pd.Series) -> pd.Series:
         parsed_iso = pd.to_datetime(iso_token, errors="coerce")
         result.loc[still_na] = parsed_iso
 
+    # Slash-separated numeric dates, e.g. "01/01/2025 - 01/07/2025".
+    # This format is common in Amazon Ads exports and was previously missed.
+    still_na = result.isna()
+    if still_na.any():
+        raw = s.loc[still_na]
+        slash_date = raw.str.extract(
+            r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+            expand=False,
+        )
+        result.loc[still_na] = pd.to_datetime(
+            slash_date, errors="coerce", dayfirst=False
+        )
+
     # Final fallback for strings such as "Jan 1 2025 - Jan 31 2025"
     # or a single human-readable date.
     still_na = result.isna()
