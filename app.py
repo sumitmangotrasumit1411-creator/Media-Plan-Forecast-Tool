@@ -621,7 +621,7 @@ def _load_vendor(file):
     return df, extract_vendor_metrics(df)
 
 
-_PARSER_CACHE_VERSION = "2026-09-24-date-fields-v2"
+_PARSER_CACHE_VERSION = "2026-09-24-date-fields-v4"
 
 def _file_signature(file):
     """Cheap identity for an UploadedFile; avoids hashing hundreds of MB.
@@ -801,6 +801,19 @@ def sidebar():
         "<p style='color:#c7d2fe;font-size:12px;font-weight:600;margin-bottom:4px;margin-top:10px;'>Vendor Central ASIN Sales Report</p>",
         unsafe_allow_html=True,
     )
+    if ads_file:
+        st.sidebar.markdown(
+            f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
+            padding:7px 10px;margin:-6px 0 10px 0;font-size:11px;font-weight:700;
+            line-height:1.35;word-break:break-all;border:1px solid #c7d2fe;">
+            📄 {ads_file.name}</div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.sidebar.markdown(
+        "<p style='color:#c7d2fe;font-size:12px;font-weight:600;margin-bottom:4px;margin-top:10px;'>Vendor Central ASIN Sales Report</p>",
+        unsafe_allow_html=True,
+    )
     vendor_file = st.sidebar.file_uploader(
         "Vendor Central ASIN Sales Report",
         type=["csv", "xlsx", "xls"],
@@ -808,6 +821,15 @@ def sidebar():
         help="Upload your Vendor Central report (CSV, XLSX or XLS).",
         label_visibility="collapsed",
     )
+
+    if vendor_file:
+        st.sidebar.markdown(
+            f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
+            padding:7px 10px;margin:-6px 0 10px 0;font-size:11px;font-weight:700;
+            line-height:1.35;word-break:break-all;border:1px solid #c7d2fe;">
+            📄 {vendor_file.name}</div>""",
+            unsafe_allow_html=True,
+        )
 
     st.sidebar.markdown("---")
 
