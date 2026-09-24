@@ -797,10 +797,6 @@ def sidebar():
         label_visibility="collapsed",
     )
 
-    st.sidebar.markdown(
-        "<p style='color:#c7d2fe;font-size:12px;font-weight:600;margin-bottom:4px;margin-top:10px;'>Vendor Central ASIN Sales Report</p>",
-        unsafe_allow_html=True,
-    )
     if ads_file:
         st.sidebar.markdown(
             f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
