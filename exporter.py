@@ -2,8 +2,7 @@
 exporter.py — Generate a downloadable Excel media plan workbook.
 
 Phase 5 additions:
-  Sheet 6 — ASIN Health Scores (from tab_intelligence health_df)
-  Sheet 7 — Monthly Media Plan (12-month spend/sales calendar)
+  Sheet 3 — Monthly Media Plan (12-month spend/sales calendar)
 """
 
 from __future__ import annotations
@@ -30,11 +29,7 @@ def build_excel_media_plan(
     Sheets:
       1. Executive Summary
       2. Scenarios
-      3. Campaign Recommendations
-      4. Campaign Performance
-      5. ASIN Analysis
-      6. ASIN Health Scores     (Phase 5 — optional)
-      7. Monthly Media Plan     (Phase 5 — optional)
+      3. Monthly Media Plan
     """
     output = io.BytesIO()
 
@@ -137,84 +132,12 @@ def build_excel_media_plan(
         ws2.set_row(0, 20, header_fmt)
         ws2.set_column("A:Z", 22)
 
+        # The workbook intentionally contains only the leadership-facing
+        # outputs requested by the user: Executive Summary, Scenarios, and
+        # Monthly Media Plan. Detailed campaign/ASIN sheets are omitted.
+        
         # ==================================================================
-        # Sheet 3 — Campaign Recommendations (best scenario = +10%)
-        # ==================================================================
-        if scenarios:
-            target_scenario = next(
-                (s for s in scenarios if s["growth_pct"] == 10), scenarios[0]
-            )
-            if target_scenario.get("campaign_recommendations"):
-                cr_df = pd.DataFrame(target_scenario["campaign_recommendations"])
-                cr_df.columns = [c.replace("_", " ").title() for c in cr_df.columns]
-                cr_df.to_excel(writer, sheet_name="Campaign Recommendations", index=False)
-                ws3 = writer.sheets["Campaign Recommendations"]
-                ws3.set_row(0, 20, header_fmt)
-                ws3.set_column("A:Z", 24)
-
-        # ==================================================================
-        # Sheet 4 — Campaign Performance
-        # ==================================================================
-        if campaign_df is not None and not campaign_df.empty:
-            campaign_df.to_excel(writer, sheet_name="Campaign Performance", index=False)
-            ws4 = writer.sheets["Campaign Performance"]
-            ws4.set_row(0, 20, header_fmt)
-            ws4.set_column("A:Z", 20)
-
-        # ==================================================================
-        # Sheet 5 — ASIN Analysis
-        # ==================================================================
-        if asin_merged_df is not None and not asin_merged_df.empty:
-            asin_merged_df.to_excel(writer, sheet_name="ASIN Analysis", index=False)
-            ws5 = writer.sheets["ASIN Analysis"]
-            ws5.set_row(0, 20, header_fmt)
-            ws5.set_column("A:Z", 20)
-
-        # ==================================================================
-        # Sheet 6 — ASIN Health Scores  (Phase 5)
-        # ==================================================================
-        if health_df is not None and not health_df.empty:
-            # Select and rename display columns
-            health_export_cols = [c for c in [
-                "asin", "score", "tier", "spend", "ad_sales", "roas",
-                "acos_%", "cvr_%", "ntb_%", "impressions",
-                "ordered_revenue", "ordered_units",
-            ] if c in health_df.columns]
-            h_df = health_df[health_export_cols].copy()
-
-            rename_h = {
-                "asin": "ASIN", "score": "Health Score (0–100)", "tier": "Tier",
-                "spend": "Ad Spend ($)", "ad_sales": "Ad Sales ($)",
-                "roas": "ROAS", "acos_%": "ACOS (%)", "cvr_%": "CVR (%)",
-                "ntb_%": "NTB (%)", "impressions": "Impressions",
-                "ordered_revenue": "Ordered Revenue ($)",
-                "ordered_units": "Ordered Units",
-            }
-            h_df = h_df.rename(columns={k: v for k, v in rename_h.items() if k in h_df.columns})
-            h_df.to_excel(writer, sheet_name="ASIN Health Scores", index=False)
-
-            ws6 = writer.sheets["ASIN Health Scores"]
-            ws6.set_row(0, 20, header_orange_fmt)
-            ws6.set_column("A:A", 16)   # ASIN
-            ws6.set_column("B:B", 20)   # Score
-            ws6.set_column("C:C", 12)   # Tier
-            ws6.set_column("D:L", 18)
-
-            # Colour-code rows by tier (conditional format simulation via row-level write)
-            tier_row_fmts = {
-                "Scale":    wb.add_format({"bg_color": "#E2EFDA", "border": 1}),
-                "Optimise": wb.add_format({"bg_color": "#FFF2CC", "border": 1}),
-                "Review":   wb.add_format({"bg_color": "#FCE4D6", "border": 1}),
-                "Pause":    wb.add_format({"bg_color": "#FFE0E0", "border": 1, "bold": True}),
-            }
-            for row_idx, (_, row) in enumerate(h_df.iterrows(), start=1):
-                tier_val = row.get("Tier", "")
-                fmt_t = tier_row_fmts.get(tier_val, plain_fmt)
-                for col_idx, val in enumerate(row.values):
-                    ws6.write(row_idx, col_idx, val, fmt_t)
-
-        # ==================================================================
-        # Sheet 7 — Monthly Media Plan  (Phase 5)
+        # Sheet 3 — Monthly Media Plan  (Phase 5)
         # ==================================================================
         if monthly_df is not None and not monthly_df.empty:
             monthly_export = monthly_df.copy()
