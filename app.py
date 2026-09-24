@@ -798,16 +798,21 @@ def sidebar():
     )
 
     if ads_file:
+        # Streamlit's native uploader truncates long filenames. Keep the
+        # native control, but render the full name in a dedicated text block
+        # outside the uploader so it cannot be clipped by uploader CSS.
         st.sidebar.markdown(
-            f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
-            padding:8px 10px;margin:-4px 0 10px 0;font-size:11px;font-weight:700;
-            line-height:1.4;overflow-wrap:anywhere;word-break:break-word;
-            white-space:normal;width:100%;box-sizing:border-box;
-            border:1px solid #c7d2fe;">
-            📄 <span style="font-weight:800;">{ads_file.name}</span></div>""",
+            f"""<div style="display:block;width:100%;box-sizing:border-box;
+            background:#ffffff;border:1px solid #c7d2fe;border-radius:8px;
+            padding:8px 10px;margin:-2px 0 10px 0;color:#1e1b4b;
+            font-size:11px;font-weight:700;line-height:1.4;
+            overflow-wrap:anywhere;word-break:break-word;white-space:normal;">
+            <span style="display:block;color:#4f46e5;font-size:10px;
+            font-weight:800;margin-bottom:3px;">SELECTED AMAZON ADS FILE</span>
+            <span style="display:block;color:#1e1b4b;">{ads_file.name}</span>
+            </div>""",
             unsafe_allow_html=True,
         )
-        st.sidebar.caption(f"Selected Amazon Ads file: {ads_file.name}")
 
     st.sidebar.markdown(
         "<p style='color:#c7d2fe;font-size:12px;font-weight:600;margin-bottom:4px;margin-top:10px;'>Vendor Central ASIN Sales Report</p>",
