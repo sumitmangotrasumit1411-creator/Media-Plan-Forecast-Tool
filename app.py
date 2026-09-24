@@ -621,11 +621,17 @@ def _load_vendor(file):
     return df, extract_vendor_metrics(df)
 
 
+_PARSER_CACHE_VERSION = "2026-09-24-date-fields-v2"
+
 def _file_signature(file):
-    """Cheap identity for an UploadedFile; avoids hashing hundreds of MB."""
+    """Cheap identity for an UploadedFile; avoids hashing hundreds of MB.
+    Includes a parser version so deployed parser fixes force one clean re-read
+    of an already-uploaded file instead of reusing the old session DataFrame.
+    """
     if file is None:
         return None
     return (
+        _PARSER_CACHE_VERSION,
         getattr(file, "name", ""),
         getattr(file, "size", None),
         getattr(file, "type", ""),
