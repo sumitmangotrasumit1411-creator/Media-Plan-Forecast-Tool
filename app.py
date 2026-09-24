@@ -800,11 +800,14 @@ def sidebar():
     if ads_file:
         st.sidebar.markdown(
             f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
-            padding:7px 10px;margin:-6px 0 10px 0;font-size:11px;font-weight:700;
-            line-height:1.35;word-break:break-all;border:1px solid #c7d2fe;">
-            📄 {ads_file.name}</div>""",
+            padding:8px 10px;margin:-4px 0 10px 0;font-size:11px;font-weight:700;
+            line-height:1.4;overflow-wrap:anywhere;word-break:break-word;
+            white-space:normal;width:100%;box-sizing:border-box;
+            border:1px solid #c7d2fe;">
+            📄 <span style="font-weight:800;">{ads_file.name}</span></div>""",
             unsafe_allow_html=True,
         )
+        st.sidebar.caption(f"Selected Amazon Ads file: {ads_file.name}")
 
     st.sidebar.markdown(
         "<p style='color:#c7d2fe;font-size:12px;font-weight:600;margin-bottom:4px;margin-top:10px;'>Vendor Central ASIN Sales Report</p>",
