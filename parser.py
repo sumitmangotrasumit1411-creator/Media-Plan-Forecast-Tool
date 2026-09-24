@@ -261,7 +261,8 @@ _FORECAST_COLUMNS: frozenset = frozenset({
     "impressions", "clicks", "spend", "ad_sales", "ad_orders",
     "ad_orders_ntb", "ad_sales_longterm", "sales_ntb",
     "campaign_name", "campaign_type", "ad_group_name", "targeting",
-    "asin", "match_type", "bid_strategy", "report_date", "week_date", "month_date", "date_range",
+    "asin", "match_type", "bid_strategy",
+    "start_date", "end_date", "report_date", "week_date", "month_date", "date_range",
 })
 
 # Canonical numeric columns — always coerced; skip the heuristic check
