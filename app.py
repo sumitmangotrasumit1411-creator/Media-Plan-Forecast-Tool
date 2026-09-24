@@ -1112,7 +1112,7 @@ def main():
     campaign_df    = bd.get("campaign_df", pd.DataFrame())
     asin_ads_df    = bd.get("asin_ads_df", pd.DataFrame())
     asin_vendor_df = bd.get("asin_vendor_df", pd.DataFrame())
-    merged_asin_df = _cached_merge_asin(asin_ads_df, asin_vendor_df) if not ads_df.attrs.get("forecast_only", False) else pd.DataFrame()
+    merged_asin_df = _cached_merge_asin(asin_ads_df, asin_vendor_df) if not getattr(ads_df, "attrs", {}).get("forecast_only", False) else pd.DataFrame()
     match_df       = bd.get("match_df", pd.DataFrame())
     prod_intel     = bd.get("prod_intel")
     bid_df         = bd.get("bid_df", pd.DataFrame())
