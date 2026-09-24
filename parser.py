@@ -28,6 +28,10 @@ import pandas as pd
 import numpy as np
 import io
 import re
+import zipfile
+import gzip
+import tempfile
+import os
 
 try:
     import pyarrow  # noqa: F401 — presence check only
@@ -411,6 +415,59 @@ def _read_file(uploaded_file) -> pd.DataFrame:
     parse is returned.
     """
     name = uploaded_file.name.lower()
+
+    # Large Amazon exports are much more reliable when uploaded compressed.
+    # Streamlit Cloud must hold the browser upload in memory; a 600MB raw CSV
+    # can therefore exhaust the Community Cloud memory ceiling before parsing.
+    # For .zip/.gz we decompress to a local temporary file and parse from disk.
+    if name.endswith(".zip"):
+        uploaded_file.seek(0)
+        with tempfile.TemporaryDirectory(prefix="amazon_report_") as tmp:
+            zip_path = os.path.join(tmp, "upload.zip")
+            with open(zip_path, "wb") as out:
+                while True:
+                    chunk = uploaded_file.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            with zipfile.ZipFile(zip_path) as zf:
+                csv_names = [
+                    n for n in zf.namelist()
+                    if not n.endswith("/") and n.lower().endswith((".csv", ".csv.gz"))
+                ]
+                if not csv_names:
+                    raise ValueError("ZIP must contain a CSV or CSV.GZ Amazon report.")
+                if len(csv_names) > 1:
+                    # Prefer the largest CSV — Amazon exports normally contain
+                    # one report and may include small metadata files.
+                    csv_names.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+                extracted = os.path.join(tmp, "report.csv")
+                with zf.open(csv_names[0]) as src, open(extracted, "wb") as dst:
+                    while True:
+                        chunk = src.read(8 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
+            with open(extracted, "rb") as f:
+                return _read_csv_fast(f, encoding="utf-8-sig")
+
+    if name.endswith(".gz"):
+        uploaded_file.seek(0)
+        with tempfile.NamedTemporaryFile(prefix="amazon_report_", suffix=".csv", delete=False) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = uploaded_file.read(8 * 1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+        try:
+            with gzip.open(tmp_path, "rb") as f:
+                return _read_csv_fast(f, encoding="utf-8-sig")
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     if name.endswith(".csv"):
         # utf-8-sig strips BOM automatically; covers the majority of Amazon exports
