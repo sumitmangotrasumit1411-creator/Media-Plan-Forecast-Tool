@@ -758,9 +758,9 @@ def sidebar():
     )
     ads_file = st.sidebar.file_uploader(
         "Amazon Advertising Report",
-        type=["csv", "xlsx", "xls"],
+        type=["csv", "csv.gz", "zip", "xlsx", "xls"],
         max_upload_size=750,
-        help="Export from Amazon Ads Console: Campaign Manager → Reports (up to 750MB)",
+        help="For large reports, ZIP the CSV first. Supports CSV, CSV.GZ, ZIP, XLSX and XLS (up to 750MB).",
         label_visibility="collapsed",
     )
 
@@ -772,7 +772,7 @@ def sidebar():
         "Vendor Central ASIN Sales Report",
         type=["csv", "xlsx", "xls"],
         max_upload_size=750,
-        help="Export from Vendor Central → Analytics → Sales Diagnostics (up to 750MB)",
+        help="For large reports, ZIP the CSV first. Supports CSV, CSV.GZ, ZIP, XLSX and XLS (up to 750MB).",
         label_visibility="collapsed",
     )
 
