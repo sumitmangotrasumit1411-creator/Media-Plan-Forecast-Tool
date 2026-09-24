@@ -194,8 +194,8 @@ VENDOR_COLUMN_ALIASES: dict = {
     "shipped revenue": "shipped_revenue",
     "shipped product sales": "shipped_revenue",
     "total shipped revenue": "shipped_revenue",
-    "shipped cogs ($)": "shipped_revenue",
-    "shipped cogs": "shipped_revenue",
+    "shipped cogs ($)": "shipped_cogs",
+    "shipped cogs": "shipped_cogs",
     # Units
     "ordered units": "ordered_units",
     "shipped units": "shipped_units",
@@ -259,7 +259,7 @@ _NUMERIC_COLUMNS: frozenset = frozenset({
     "campaign_budget", "target_bid", "pct_ntb_purchases", "pct_ntb_sales",
     "sales_ntb", "tos_is", "conversion_rate",
     # Vendor
-    "ordered_revenue", "shipped_revenue", "ordered_units", "shipped_units",
+    "ordered_revenue", "shipped_revenue", "shipped_cogs", "ordered_units", "shipped_units",
     "avg_selling_price", "glance_views",
 })
 
