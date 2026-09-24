@@ -118,7 +118,25 @@ def _resolve_date_column(df: pd.DataFrame) -> "pd.Series | None":
     """
     for col in ["start_date", "report_date", "week_date", "month_date"]:
         if col in df.columns:
-            # infer_datetime_format removed — deprecated in pandas 2.0
+            if col == "month_date":
+                raw = df[col]
+                numeric = pd.to_numeric(raw, errors="coerce")
+                if numeric.notna().any() and numeric.dropna().between(1, 12).all():
+                    year = df.attrs.get("source_year")
+                    if not year:
+                        for ycol in ["start_date", "report_date", "week_date"]:
+                            if ycol in df.columns:
+                                yparsed = pd.to_datetime(df[ycol], errors="coerce")
+                                if yparsed.notna().any():
+                                    year = int(yparsed.dropna().dt.year.mode().iloc[0])
+                                    break
+                    if not year:
+                        year = pd.Timestamp.today().year
+                    return pd.to_datetime({
+                        "year": pd.Series(year, index=df.index),
+                        "month": numeric,
+                        "day": pd.Series(1, index=df.index),
+                    }, errors="coerce").where(numeric.notna())
             parsed = pd.to_datetime(df[col], errors="coerce")
             if parsed.notna().sum() > 0:
                 return parsed
