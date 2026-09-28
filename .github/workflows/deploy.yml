@@ -68,7 +68,7 @@ jobs:
           from utils.formatters import fmt_currency, fmt_pct, fmt_num
           from services.file_service import validate_uploaded_file
           import pandas as pd
-          from forecast import run_forecast, monthly_forecast, auto_channel_split
+          from forecast import run_forecast, monthly_forecast, auto_channel_split, rebalance_channel_split
           r = run_forecast(500000, 50000, 200000, 10.0)
           assert r['target_revenue'] > 500000
 
@@ -77,6 +77,19 @@ jobs:
           split_default = auto_channel_split(65)
           assert round(sum(split_default.values()), 10) == 1.0
           assert split_default['Sponsored Products'] > split_default['Sponsored Brands'] > split_default['Sponsored Display']
+
+          # Any slider can be changed; the other two rebalance and the
+          # resulting mix remains exactly 100% with SP > SB > SD.
+          base_split = {'Sponsored Products': 0.65, 'Sponsored Brands': 0.25, 'Sponsored Display': 0.10}
+          for changed, value in [
+              ('Sponsored Products', 55),
+              ('Sponsored Brands', 30),
+              ('Sponsored Display', 15),
+          ]:
+              changed_mix = rebalance_channel_split(changed, value, base_split)
+              assert round(sum(changed_mix.values()), 10) == 1.0
+              assert changed_mix['Sponsored Products'] > changed_mix['Sponsored Brands'] > changed_mix['Sponsored Display']
+
           split_low_sp = auto_channel_split(35)
           assert round(sum(split_low_sp.values()), 10) == 1.0
           assert split_low_sp['Sponsored Products'] > split_low_sp['Sponsored Brands'] > split_low_sp['Sponsored Display']
