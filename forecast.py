@@ -32,6 +32,21 @@ ACOS_EFFICIENCY_DECAY = 0.04  # +4% relative ACOS per 10% spend increase
 # Channel-mix efficiency
 # ---------------------------------------------------------------------------
 
+def _normalise_channel_split(channel_split: Optional[dict]) -> dict:
+    """Return a clean channel split whose weights always total exactly 100%."""
+    raw = channel_split or DEFAULT_CHANNEL_SPLIT
+    weights = {
+        "Sponsored Products": max(float(raw.get("Sponsored Products", 0.0)), 0.0),
+        "Sponsored Brands": max(float(raw.get("Sponsored Brands", 0.0)), 0.0),
+        "Sponsored Display": max(float(raw.get("Sponsored Display", 0.0)), 0.0),
+    }
+    total = sum(weights.values())
+    if total <= 0:
+        return DEFAULT_CHANNEL_SPLIT.copy()
+    return {channel: weight / total for channel, weight in weights.items()}
+
+
+
 def _channel_mix_efficiency(
     channel_split: dict,
     channel_perf_df: Optional[pd.DataFrame],
@@ -135,7 +150,7 @@ def run_forecast(
       5. override_ad_spend        — pins recommended spend directly
     Any metric not pinned is derived from the others.
     """
-    channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
+    channel_split = _normalise_channel_split(custom_channel_split)
 
     # ---- Baseline metrics ------------------------------------------------
     baseline_revenue = total_ordered_revenue if total_ordered_revenue > 0 else total_ad_sales
@@ -179,7 +194,11 @@ def run_forecast(
         recommended_spend = target_revenue * (override_tacos / 100)
     else:
         spend_multiplier = 1 + (growth_pct / 10) * ACOS_EFFICIENCY_DECAY
-        effective_acos = (current_acos or 20.0) * spend_multiplier
+        # A more efficient channel mix needs less spend to generate the same
+        # ad sales; a less efficient mix needs more. This keeps channel mix
+        # active even when ad sales are explicitly pinned.
+        mix_adjusted_acos = (current_acos or 20.0) / max(mix_efficiency, 0.01)
+        effective_acos = mix_adjusted_acos * spend_multiplier
         if target_acos_override:
             effective_acos = target_acos_override
         recommended_spend = target_ad_sales * (effective_acos / 100)
@@ -253,6 +272,7 @@ def run_forecast(
         "projected_organic_sales":     round(projected_organic_sales, 2),
         "projected_ad_contribution":   projected_ad_contribution,
         "projected_org_contribution":  projected_org_contribution,
+        "channel_mix_efficiency":       round(mix_efficiency, 4),
         # Allocation
         "channel_allocation":          channel_allocation,
         "campaign_recommendations":    campaign_recommendations,
@@ -415,18 +435,58 @@ def monthly_forecast(
     total_weight = sum(raw_weights)
     seasonal_weights = [w / total_weight for w in raw_weights]  # sums to 1.0
 
-    # Annual totals to distribute (used only when actuals are missing per month)
-    # If override provided (custom scenario), use it; else use growth-% estimate
+    # Annual forecast totals. The selected scenario is the source of truth
+    # for projected monthly values. We allocate those annual totals across
+    # months instead of simply multiplying actual monthly values by growth.
+    # This is critical: if channel mix or a custom target changes annual
+    # spend/sales, every projected month must change and the table must
+    # reconcile back to the scenario totals.
+    actual_spend_values = [
+        float(monthly_actuals.get(m, {}).get("spend") or 0.0)
+        for m in range(1, 13)
+    ]
+    actual_sales_values = [
+        float(monthly_actuals.get(m, {}).get("ad_sales") or 0.0)
+        for m in range(1, 13)
+    ]
+
+    def _build_projection_weights(actual_values):
+        present = [i for i, value in enumerate(actual_values) if value > 0]
+        if not present:
+            return list(seasonal_weights)
+
+        present_seasonal_share = sum(seasonal_weights[i] for i in present)
+        actual_total = sum(actual_values[i] for i in present)
+        missing = [i for i in range(12) if i not in present]
+        missing_seasonal_total = sum(seasonal_weights[i] for i in missing)
+
+        weights = [0.0] * 12
+        for i in present:
+            weights[i] = present_seasonal_share * (actual_values[i] / actual_total)
+
+        if missing:
+            missing_share = max(1.0 - present_seasonal_share, 0.0)
+            if missing_seasonal_total > 0:
+                for i in missing:
+                    weights[i] = missing_share * (seasonal_weights[i] / missing_seasonal_total)
+
+        total = sum(weights)
+        return [w / total for w in weights] if total > 0 else list(seasonal_weights)
+
+    spend_weights = _build_projection_weights(actual_spend_values)
+    sales_weights = _build_projection_weights(actual_sales_values)
+
     if annual_spend_override and annual_spend_override > 0:
-        annual_proj_spend = annual_spend_override
+        annual_proj_spend = float(annual_spend_override)
     else:
-        # Derive from total_ordered_revenue and default ACOS
-        annual_proj_spend = 0.0  # will fall back to seasonal distribution below
+        actual_spend_total = sum(actual_spend_values)
+        annual_proj_spend = actual_spend_total * growth_factor if actual_spend_total > 0 else 0.0
 
     if annual_sales_override and annual_sales_override > 0:
-        annual_proj_sales = annual_sales_override
+        annual_proj_sales = float(annual_sales_override)
     else:
-        annual_proj_sales = 0.0
+        actual_sales_total = sum(actual_sales_values)
+        annual_proj_sales = actual_sales_total * growth_factor if actual_sales_total > 0 else 0.0
 
     MONTH_NAMES = [
         "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -451,30 +511,21 @@ def monthly_forecast(
         spend_uplift_pct = round((spend_multiplier - 1) * 100, 0)
 
         # ── Projected spend ──────────────────────────────────────────────
-        if actual_spend is not None:
-            # Have actuals — scale by growth factor only.
-            # The spend_multiplier is NOT applied here because the actual
-            # spend already reflects real seasonal patterns for that month
-            # (e.g. Jan was genuinely high — applying ×1.0 again is correct,
-            # but Jul Prime Day actual already baked in the uplift, so
-            # multiplying by 1.30 again would double-count it).
-            proj_spend = round(actual_spend * growth_factor, 2)
-        elif annual_proj_spend > 0:
-            # No actuals — distribute annual total using seasonal weights.
-            # seasonal_weights already encodes the event multipliers
-            # (computed as multiplier / sum_of_all_multipliers), so we must
-            # NOT multiply by spend_multiplier again here.
-            proj_spend = round(annual_proj_spend * seasonal_weights[idx], 2)
-        else:
-            proj_spend = 0.0
+        # Always allocate the selected scenario's annual spend. Actual monthly
+        # data only determines the seasonal shape of the projection.
+        proj_spend = (
+            round(annual_proj_spend * spend_weights[idx], 2)
+            if annual_proj_spend > 0 else 0.0
+        )
 
         # ── Projected sales ──────────────────────────────────────────────
-        if actual_sales is not None:
-            proj_sales = round(actual_sales * growth_factor, 2)
-        elif annual_proj_sales > 0:
-            proj_sales = round(annual_proj_sales * seasonal_weights[idx], 2)
-        else:
-            proj_sales = 0.0
+        # Always allocate the selected scenario's annual ad sales. This keeps
+        # monthly projections synchronized with the scenario cards, charts and
+        # annual totals.
+        proj_sales = (
+            round(annual_proj_sales * sales_weights[idx], 2)
+            if annual_proj_sales > 0 else 0.0
+        )
 
         proj_acos = round(proj_spend / proj_sales * 100, 2) if proj_sales > 0 else None
         proj_roas = round(proj_sales / proj_spend, 2)       if proj_spend > 0 else None
