@@ -870,16 +870,13 @@ def sidebar():
         🎯 Channel Budget Split
     </div>""", unsafe_allow_html=True)
 
-    # SP is the primary editable control. SB and SD are always auto-balanced
-    # from the remaining 100% using the default 25:10 relationship. This keeps
-    # the split deterministic, totals exactly 100%, and ensures SB > SD whenever
-    # there is remaining budget. If SP is set to 0%, SB becomes the largest
-    # channel and SD the second-largest, as requested.
+    # SP is the primary editable control. SB and SD automatically rebalance
+    # from the remaining 100%, while always preserving SP > SB > SD.
     sp_pct = st.sidebar.slider(
         "Sponsored Products %",
-        0, 100, 65,
+        35, 100, 65,
         key="channel_sp_pct",
-        help="Set the Sponsored Products share. Sponsored Brands and Sponsored Display automatically rebalance from the remaining budget.",
+        help="Set the Sponsored Products share. Sponsored Brands and Sponsored Display automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
     )
 
     channel_split = auto_channel_split(sp_pct)
@@ -902,7 +899,7 @@ def sidebar():
         <span>SD {sd_w*100:.1f}%</span>
     </div>
     <div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:6px;line-height:1.4;">
-        SB + SD auto-balance the remaining budget • Total = 100%
+        SP > SB > SD • SB + SD auto-balance the remaining budget • Total = 100%
     </div>
     """, unsafe_allow_html=True)
 
