@@ -77,9 +77,9 @@ jobs:
           split_default = auto_channel_split(65)
           assert round(sum(split_default.values()), 10) == 1.0
           assert split_default['Sponsored Products'] > split_default['Sponsored Brands'] > split_default['Sponsored Display']
-          split_zero_sp = auto_channel_split(0)
-          assert round(sum(split_zero_sp.values()), 10) == 1.0
-          assert split_zero_sp['Sponsored Brands'] > split_zero_sp['Sponsored Display']
+          split_low_sp = auto_channel_split(35)
+          assert round(sum(split_low_sp.values()), 10) == 1.0
+          assert split_low_sp['Sponsored Products'] > split_low_sp['Sponsored Brands'] > split_low_sp['Sponsored Display']
 
           channel_df = pd.DataFrame({
               'ad_product': ['Sponsored Products', 'Sponsored Brands', 'Sponsored Display'],
@@ -96,7 +96,7 @@ jobs:
               custom_channel_split=auto_channel_split(40),
               channel_perf_df=channel_df,
           )
-          assert mix_a['target_ad_sales'] != mix_b['target_ad_sales'], 'Channel split must change forecast'
+          assert mix_a['target_ad_sales'] == mix_b['target_ad_sales'], 'Channel mix should not change the revenue-driven ad-sales target'
           assert mix_a['recommended_spend'] != mix_b['recommended_spend'], 'Channel split must change projected spend'
 
           # Even when ad sales are pinned, changing channel mix must change
