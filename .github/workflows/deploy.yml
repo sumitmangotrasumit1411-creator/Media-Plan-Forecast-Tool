@@ -68,9 +68,18 @@ jobs:
           from utils.formatters import fmt_currency, fmt_pct, fmt_num
           from services.file_service import validate_uploaded_file
           import pandas as pd
-          from forecast import run_forecast
+          from forecast import run_forecast, monthly_forecast, auto_channel_split
           r = run_forecast(500000, 50000, 200000, 10.0)
           assert r['target_revenue'] > 500000
+
+          # Auto channel split: one SP input drives the remaining budget
+          # proportionally into SB/SD and always totals 100%.
+          split_default = auto_channel_split(65)
+          assert round(sum(split_default.values()), 10) == 1.0
+          assert split_default['Sponsored Products'] > split_default['Sponsored Brands'] > split_default['Sponsored Display']
+          split_zero_sp = auto_channel_split(0)
+          assert round(sum(split_zero_sp.values()), 10) == 1.0
+          assert split_zero_sp['Sponsored Brands'] > split_zero_sp['Sponsored Display']
 
           channel_df = pd.DataFrame({
               'ad_product': ['Sponsored Products', 'Sponsored Brands', 'Sponsored Display'],
@@ -79,15 +88,56 @@ jobs:
           })
           mix_a = run_forecast(
               500000, 50000, 200000, 10.0,
-              custom_channel_split={'Sponsored Products': .65, 'Sponsored Brands': .25, 'Sponsored Display': .10},
+              custom_channel_split=split_default,
               channel_perf_df=channel_df,
           )
           mix_b = run_forecast(
               500000, 50000, 200000, 10.0,
-              custom_channel_split={'Sponsored Products': .30, 'Sponsored Brands': .30, 'Sponsored Display': .40},
+              custom_channel_split=auto_channel_split(40),
               channel_perf_df=channel_df,
           )
           assert mix_a['target_ad_sales'] != mix_b['target_ad_sales'], 'Channel split must change forecast'
+          assert mix_a['recommended_spend'] != mix_b['recommended_spend'], 'Channel split must change projected spend'
+
+          # Even when ad sales are pinned, changing channel mix must change
+          # the derived spend unless spend/ROAS/TACOS is also explicitly pinned.
+          pinned_sales_a = run_forecast(
+              500000, 50000, 200000, 0,
+              custom_channel_split=split_default,
+              channel_perf_df=channel_df,
+              override_ad_sales=240000,
+          )
+          pinned_sales_b = run_forecast(
+              500000, 50000, 200000, 0,
+              custom_channel_split=auto_channel_split(40),
+              channel_perf_df=channel_df,
+              override_ad_sales=240000,
+          )
+          assert pinned_sales_a['recommended_spend'] != pinned_sales_b['recommended_spend'], 'Channel mix must affect derived spend when sales are pinned'
+
+          # Monthly plan must reconcile to the selected annual forecast,
+          # rather than remaining tied to the original monthly actuals.
+          trend = pd.DataFrame({
+              '_period_dt': pd.to_datetime(['2025-01-01', '2025-02-01', '2025-03-01']),
+              'spend': [10000, 20000, 30000],
+              'ad_sales': [40000, 80000, 120000],
+              'impressions': [1000, 2000, 3000],
+              'clicks': [100, 200, 300],
+              'ad_orders': [10, 20, 30],
+          })
+          month_a, _ = monthly_forecast(
+              trend, 10, 500000, split_default,
+              annual_spend_override=120000, annual_sales_override=480000,
+          )
+          month_b, _ = monthly_forecast(
+              trend, 10, 500000, split_default,
+              annual_spend_override=240000, annual_sales_override=720000,
+          )
+          assert round(month_a['Projected Spend ($)'].sum(), 2) == 120000
+          assert round(month_a['Projected Ad Sales ($)'].sum(), 2) == 480000
+          assert round(month_b['Projected Spend ($)'].sum(), 2) == 240000
+          assert round(month_b['Projected Ad Sales ($)'].sum(), 2) == 720000
+          assert month_a['Projected Spend ($)'].tolist() != month_b['Projected Spend ($)'].tolist()
 
           custom = run_forecast(500000, 50000, 200000, 10.0, override_target_revenue=750000)
           assert custom['target_revenue'] == 750000
