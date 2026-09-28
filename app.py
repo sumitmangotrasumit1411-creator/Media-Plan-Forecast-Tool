@@ -1238,6 +1238,7 @@ def main():
             scenarios = render_forecast(
                 ads_metrics, vendor_metrics, campaign_df, growth_options, channel_split,
                 trend_df=trend_df, custom_targets=custom_targets,
+                channel_perf_df=ad_prod_df,
             )
 
     with tab5:
