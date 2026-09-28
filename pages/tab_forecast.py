@@ -1,7 +1,7 @@
 """
 pages/tab_forecast.py — Forecast & Media Plan tab
 Contains the full render_forecast() function extracted from app.py.
-All forecast calculations are identical — zero business logic changed.
+Forecast calculations are scenario-driven: channel mix and custom targets are active inputs.
 
 Baseline / Projected separation (business logic fix):
 ------------------------------------------------------
@@ -52,6 +52,10 @@ def render_forecast(
         return []
 
     ct = custom_targets or {}
+
+    # Channel split is an active forecast driver. The engine uses the uploaded
+    # channel-level performance to adjust projected efficiency, not just the
+    # pie-chart allocation shown later in this tab.
 
     # ---- Run growth-% scenarios -----------------------------------------------
     scenarios = run_multi_scenario(
