@@ -32,6 +32,31 @@ ACOS_EFFICIENCY_DECAY = 0.04  # +4% relative ACOS per 10% spend increase
 # Channel-mix efficiency
 # ---------------------------------------------------------------------------
 
+def auto_channel_split(sp_pct: float) -> dict:
+    """
+    Auto-balance SP/SB/SD from one editable SP percentage.
+
+    The remaining budget is redistributed proportionally using the original
+    25:10 SB:SD relationship. Therefore the three channels always total 100%,
+    SB remains above SD whenever there is remaining budget, and SP=0% produces
+    SB as the largest channel with SD second.
+    """
+    sp_pct = min(max(float(sp_pct), 0.0), 100.0)
+    remaining_pct = 100.0 - sp_pct
+    if remaining_pct <= 0:
+        sb_pct = 0.0
+        sd_pct = 0.0
+    else:
+        sb_pct = remaining_pct * (25.0 / 35.0)
+        sd_pct = remaining_pct * (10.0 / 35.0)
+
+    return {
+        "Sponsored Products": sp_pct / 100.0,
+        "Sponsored Brands": sb_pct / 100.0,
+        "Sponsored Display": sd_pct / 100.0,
+    }
+
+
 def _normalise_channel_split(channel_split: Optional[dict]) -> dict:
     """Return a clean channel split whose weights always total exactly 100%."""
     raw = channel_split or DEFAULT_CHANNEL_SPLIT
