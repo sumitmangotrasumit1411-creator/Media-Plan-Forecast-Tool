@@ -38,6 +38,7 @@ def render_forecast(
     channel_split: dict,
     trend_df: pd.DataFrame = None,
     custom_targets: dict = None,
+    channel_perf_df: pd.DataFrame = None,
 ) -> list:
     """Render the Forecast & Media Plan tab. Returns the list of scenario dicts."""
     total_ordered_revenue = vendor_metrics.get("total_ordered_revenue", 0) if vendor_metrics else 0
@@ -60,6 +61,7 @@ def render_forecast(
         growth_scenarios=growth_options,
         custom_channel_split=channel_split,
         campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
+        channel_perf_df=channel_perf_df if channel_perf_df is not None and not channel_perf_df.empty else None,
     )
 
     # ---- Custom scenario -------------------------------------------------------
@@ -73,6 +75,7 @@ def render_forecast(
             growth_pct=0,
             custom_channel_split=channel_split,
             campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
+            channel_perf_df=channel_perf_df if channel_perf_df is not None and not channel_perf_df.empty else None,
             override_target_revenue=ct.get("target_revenue"),
             override_ad_spend=ct.get("ad_spend"),
             override_ad_sales=ct.get("ad_sales"),
