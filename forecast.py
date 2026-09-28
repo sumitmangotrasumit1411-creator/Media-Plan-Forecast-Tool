@@ -66,6 +66,87 @@ def auto_channel_split(sp_pct: float) -> dict:
     }
 
 
+
+def rebalance_channel_split(
+    changed_channel: str,
+    changed_pct: float,
+    current_split: Optional[dict] = None,
+) -> dict:
+    """Rebalance all three channel percentages after any one slider changes.
+
+    The changed channel is treated as fixed. The other two channels receive
+    the remaining budget proportionally to their previous shares, with a
+    small constrained adjustment whenever needed to preserve:
+        Sponsored Products > Sponsored Brands > Sponsored Display
+    and an exact 100% total.
+    """
+    current = current_split or DEFAULT_CHANNEL_SPLIT
+    old_sp = float(current.get("Sponsored Products", 0.65)) * 100.0
+    old_sb = float(current.get("Sponsored Brands", 0.25)) * 100.0
+    old_sd = float(current.get("Sponsored Display", 0.10)) * 100.0
+
+    changed_channel = str(changed_channel)
+    p = float(changed_pct)
+
+    if changed_channel == "Sponsored Products":
+        p = min(max(p, 34.0), 99.0)
+        remaining = 100.0 - p
+        ratio = old_sb / max(old_sb + old_sd, 0.001)
+        sb = remaining * ratio
+        sd = remaining - sb
+
+        if sb <= sd or sb >= p:
+            sb = min(p - 0.1, max((remaining + 0.1) / 2.0, 0.1))
+            sd = remaining - sb
+
+        return {
+            "Sponsored Products": p / 100.0,
+            "Sponsored Brands": max(sb, 0.0) / 100.0,
+            "Sponsored Display": max(sd, 0.0) / 100.0,
+        }
+
+    if changed_channel == "Sponsored Brands":
+        p = min(max(p, 1.0), 49.0)
+        remaining = 100.0 - p
+        ratio = old_sp / max(old_sp + old_sd, 0.001)
+        sp = remaining * ratio
+        sd = remaining - sp
+
+        # For SP > SB > SD:
+        #   SP > SB  and  SD < SB.
+        lower_sp = max(p + 0.1, 100.0 - 2.0 * p + 0.1)
+        upper_sp = 100.0 - p - 0.1
+        sp = min(upper_sp, max(lower_sp, sp))
+        sd = 100.0 - p - sp
+
+        return {
+            "Sponsored Products": max(sp, 0.0) / 100.0,
+            "Sponsored Brands": p / 100.0,
+            "Sponsored Display": max(sd, 0.0) / 100.0,
+        }
+
+    # Sponsored Display is fixed. To preserve SP > SB > SD, SD can range
+    # from 1% to 32%; the remaining budget is split between SP and SB.
+    p = min(max(p, 1.0), 32.0)
+    remaining = 100.0 - p
+    ratio = old_sp / max(old_sp + old_sb, 0.001)
+    sp = remaining * ratio
+    sb = remaining - sp
+
+    # Strict ordering requires SP > SB > SD.
+    minimum_sp = (remaining / 2.0) + 0.1
+    sp = max(minimum_sp, sp)
+    sb = remaining - sp
+    if sb <= p:
+        sb = p + 0.1
+        sp = remaining - sb
+
+    return {
+        "Sponsored Products": max(sp, 0.0) / 100.0,
+        "Sponsored Brands": max(sb, 0.0) / 100.0,
+        "Sponsored Display": p / 100.0,
+    }
+
 def _normalise_channel_split(channel_split: Optional[dict]) -> dict:
     """Return a clean channel split whose weights always total exactly 100%."""
     raw = channel_split or DEFAULT_CHANNEL_SPLIT
