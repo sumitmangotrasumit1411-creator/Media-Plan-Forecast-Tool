@@ -36,6 +36,7 @@ from insights import (
     product_intelligence, bid_strategy_analysis, ad_product_analysis,
 )
 from trends import build_trend_df, trend_summary, ad_product_trend
+from forecast import auto_channel_split
 
 from pages.tab_metrics         import render_metrics_dashboard
 from pages.tab_product         import render_product_tab
@@ -881,28 +882,12 @@ def sidebar():
         help="Set the Sponsored Products share. Sponsored Brands and Sponsored Display automatically rebalance from the remaining budget.",
     )
 
-    remaining_pct = 100 - sp_pct
-    if remaining_pct <= 0:
-        sb_pct = 0.0
-        sd_pct = 0.0
-    else:
-        # Proportional redistribution of the remaining budget using the
-        # original 25:10 SB:SD relationship.
-        sb_pct = remaining_pct * (25 / 35)
-        sd_pct = remaining_pct * (10 / 35)
-
-    sp_w = sp_pct / 100.0
-    sb_w = sb_pct / 100.0
-    sd_w = sd_pct / 100.0
-
-    # Final normalization protects against floating-point drift.
-    _weight_total = sp_w + sb_w + sd_w
-    if _weight_total <= 0:
-        sp_w, sb_w, sd_w = 0.0, 25 / 35, 10 / 35
-    else:
-        sp_w /= _weight_total
-        sb_w /= _weight_total
-        sd_w /= _weight_total
+    channel_split = auto_channel_split(sp_pct)
+    sp_w = channel_split["Sponsored Products"]
+    sb_w = channel_split["Sponsored Brands"]
+    sd_w = channel_split["Sponsored Display"]
+    sb_pct = sb_w * 100.0
+    sd_pct = sd_w * 100.0
 
     # Visual split bar
     st.sidebar.markdown(f"""
@@ -921,11 +906,7 @@ def sidebar():
     </div>
     """, unsafe_allow_html=True)
 
-    channel_split = {
-        "Sponsored Products": sp_w,
-        "Sponsored Brands":   sb_w,
-        "Sponsored Display":  sd_w,
-    }
+    # channel_split is already normalized by auto_channel_split().
 
     st.sidebar.markdown("---")
 
