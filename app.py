@@ -869,27 +869,55 @@ def sidebar():
         🎯 Channel Budget Split
     </div>""", unsafe_allow_html=True)
 
-    sp_pct = st.sidebar.slider("Sponsored Products %", 0, 100, 65)
-    sb_pct = st.sidebar.slider("Sponsored Brands %",   0, 100, 25)
-    sd_pct = st.sidebar.slider("Sponsored Display %",  0, 100, 10)
+    # SP is the primary editable control. SB and SD are always auto-balanced
+    # from the remaining 100% using the default 25:10 relationship. This keeps
+    # the split deterministic, totals exactly 100%, and ensures SB > SD whenever
+    # there is remaining budget. If SP is set to 0%, SB becomes the largest
+    # channel and SD the second-largest, as requested.
+    sp_pct = st.sidebar.slider(
+        "Sponsored Products %",
+        0, 100, 65,
+        key="channel_sp_pct",
+        help="Set the Sponsored Products share. Sponsored Brands and Sponsored Display automatically rebalance from the remaining budget.",
+    )
 
-    _total = sp_pct + sb_pct + sd_pct
-    if _total == 0:
-        sp_w, sb_w, sd_w = 0.65, 0.25, 0.10
+    remaining_pct = 100 - sp_pct
+    if remaining_pct <= 0:
+        sb_pct = 0.0
+        sd_pct = 0.0
     else:
-        sp_w = sp_pct / _total
-        sb_w = sb_pct / _total
-        sd_w = sd_pct / _total
+        # Proportional redistribution of the remaining budget using the
+        # original 25:10 SB:SD relationship.
+        sb_pct = remaining_pct * (25 / 35)
+        sd_pct = remaining_pct * (10 / 35)
+
+    sp_w = sp_pct / 100.0
+    sb_w = sb_pct / 100.0
+    sd_w = sd_pct / 100.0
+
+    # Final normalization protects against floating-point drift.
+    _weight_total = sp_w + sb_w + sd_w
+    if _weight_total <= 0:
+        sp_w, sb_w, sd_w = 0.0, 25 / 35, 10 / 35
+    else:
+        sp_w /= _weight_total
+        sb_w /= _weight_total
+        sd_w /= _weight_total
 
     # Visual split bar
     st.sidebar.markdown(f"""
     <div style="margin:6px 0 12px;background:rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;height:8px;display:flex;">
-        <div style="width:{sp_w*100:.0f}%;background:#4f46e5;"></div>
-        <div style="width:{sb_w*100:.0f}%;background:#f97316;"></div>
-        <div style="width:{sd_w*100:.0f}%;background:#10b981;"></div>
+        <div style="width:{sp_w*100:.1f}%;background:#4f46e5;"></div>
+        <div style="width:{sb_w*100:.1f}%;background:#f97316;"></div>
+        <div style="width:{sd_w*100:.1f}%;background:#10b981;"></div>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.5);">
-        <span>SP {sp_w*100:.0f}%</span><span>SB {sb_w*100:.0f}%</span><span>SD {sd_w*100:.0f}%</span>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.65);">
+        <span>SP {sp_w*100:.1f}%</span>
+        <span>SB {sb_w*100:.1f}%</span>
+        <span>SD {sd_w*100:.1f}%</span>
+    </div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:6px;line-height:1.4;">
+        SB + SD auto-balance the remaining budget • Total = 100%
     </div>
     """, unsafe_allow_html=True)
 
