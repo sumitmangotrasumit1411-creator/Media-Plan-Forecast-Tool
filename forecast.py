@@ -140,7 +140,11 @@ def _channel_mix_efficiency(
     )
     if overall_roas <= 0 or proposed_roas <= 0:
         return 1.0
-    return float(np.clip(proposed_roas / overall_roas, 0.50, 1.50))
+
+    # Compress the raw channel-efficiency ratio so one very high-ROAS
+    # channel cannot saturate the forecast at an arbitrary hard cap.
+    ratio = proposed_roas / overall_roas
+    return float(1.0 + 0.50 * ((ratio - 1.0) / (ratio + 1.0)))
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +209,7 @@ def run_forecast(
             ad_contribution_ratio = min(total_ad_sales / baseline_revenue, 0.90)
         else:
             ad_contribution_ratio = 0.40
-        incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio * mix_efficiency
+        incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio
         target_ad_sales = total_ad_sales + incremental_ad_sales_needed
 
     # ---- Step 3: resolve recommended_spend --------------------------------
@@ -219,14 +223,26 @@ def run_forecast(
         recommended_spend = target_revenue * (override_tacos / 100)
     else:
         spend_multiplier = 1 + (growth_pct / 10) * ACOS_EFFICIENCY_DECAY
-        # A more efficient channel mix needs less spend to generate the same
-        # ad sales; a less efficient mix needs more. This keeps channel mix
-        # active even when ad sales are explicitly pinned.
-        mix_adjusted_acos = (current_acos or 20.0) / max(mix_efficiency, 0.01)
-        effective_acos = mix_adjusted_acos * spend_multiplier
         if target_acos_override:
             effective_acos = target_acos_override
-        recommended_spend = target_ad_sales * (effective_acos / 100)
+            recommended_spend = target_ad_sales * (effective_acos / 100)
+        elif current_roas and current_roas > 0:
+            # Keep uploaded spend as the baseline and calculate only the
+            # incremental budget required for incremental ad sales.
+            incremental_sales = target_ad_sales - total_ad_sales
+            incremental_spend = (
+                incremental_sales
+                / max(current_roas * max(mix_efficiency, 0.01), 0.01)
+                * spend_multiplier
+            )
+            recommended_spend = max(total_ad_spend + incremental_spend, 0.0)
+            effective_acos = (
+                recommended_spend / target_ad_sales * 100
+                if target_ad_sales > 0 else 0.0
+            )
+        else:
+            effective_acos = (current_acos or 20.0) * spend_multiplier
+            recommended_spend = target_ad_sales * (effective_acos / 100)
 
     # If the user pins ad spend but leaves ad sales free, estimate the
     # sales produced by that spend using the proposed channel mix efficiency.
