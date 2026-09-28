@@ -36,24 +36,33 @@ def auto_channel_split(sp_pct: float) -> dict:
     """
     Auto-balance SP/SB/SD from one editable SP percentage.
 
-    The remaining budget is redistributed proportionally using the original
-    25:10 SB:SD relationship. Therefore the three channels always total 100%,
-    SB remains above SD whenever there is remaining budget, and SP=0% produces
-    SB as the largest channel with SD second.
+    SP is always the largest channel, SB is second, and SD is third.
+    The original 25:10 SB:SD relationship is preserved whenever it fits;
+    at lower SP values, SB is capped just below SP and SD receives the rest.
+    The three channels always total exactly 100%.
+
+    Because SP must remain the largest channel, the UI exposes SP from 35%
+    upward. This avoids an impossible state where two smaller channels would
+    have to sum to more than the SP allocation.
     """
-    sp_pct = min(max(float(sp_pct), 0.0), 100.0)
+    sp_pct = min(max(float(sp_pct), 35.0), 100.0)
     remaining_pct = 100.0 - sp_pct
+
     if remaining_pct <= 0:
         sb_pct = 0.0
         sd_pct = 0.0
     else:
+        # Preserve the original 25:10 relationship when possible.
         sb_pct = remaining_pct * (25.0 / 35.0)
-        sd_pct = remaining_pct * (10.0 / 35.0)
+        if sb_pct >= sp_pct:
+            # Keep strict SP > SB > SD ordering at lower SP values.
+            sb_pct = sp_pct - 1.0
+        sd_pct = remaining_pct - sb_pct
 
     return {
         "Sponsored Products": sp_pct / 100.0,
-        "Sponsored Brands": sb_pct / 100.0,
-        "Sponsored Display": sd_pct / 100.0,
+        "Sponsored Brands": max(sb_pct, 0.0) / 100.0,
+        "Sponsored Display": max(sd_pct, 0.0) / 100.0,
     }
 
 
