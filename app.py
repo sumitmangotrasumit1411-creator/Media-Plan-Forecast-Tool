@@ -882,6 +882,16 @@ def sidebar():
         if _key not in st.session_state:
             st.session_state[_key] = _value
 
+    # Repair any state left by an older channel-split implementation.
+    _sp0 = float(st.session_state["channel_sp_pct"])
+    _sb0 = float(st.session_state["channel_sb_pct"])
+    _sd0 = float(st.session_state["channel_sd_pct"])
+    if (
+        abs((_sp0 + _sb0 + _sd0) - 100.0) > 0.01
+        or not (_sp0 > _sb0 > _sd0)
+    ):
+        st.session_state.update(_channel_defaults)
+
     _widget_keys = {
         "Sponsored Products": "_channel_sp_pct",
         "Sponsored Brands": "_channel_sb_pct",
