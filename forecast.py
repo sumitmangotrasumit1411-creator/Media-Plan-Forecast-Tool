@@ -29,6 +29,81 @@ ACOS_EFFICIENCY_DECAY = 0.04  # +4% relative ACOS per 10% spend increase
 
 
 # ---------------------------------------------------------------------------
+# Channel-mix efficiency
+# ---------------------------------------------------------------------------
+
+def _channel_mix_efficiency(
+    channel_split: dict,
+    channel_perf_df: Optional[pd.DataFrame],
+    baseline_spend: float,
+    baseline_sales: float,
+) -> float:
+    """
+    Translate a proposed SP/SB/SD budget mix into a forecast efficiency factor.
+
+    When channel-level actuals are available, the factor compares the ROAS of
+    the proposed mix with the uploaded account's overall ROAS. This makes the
+    channel split a true forecast input rather than a display-only allocation.
+
+    If channel-level actuals are unavailable, use conservative relative channel
+    efficiency indices so changing the mix still changes the forecast.
+    """
+    default_index = {
+        "Sponsored Products": 1.00,
+        "Sponsored Brands": 0.92,
+        "Sponsored Display": 0.78,
+    }
+
+    if not channel_split:
+        return 1.0
+
+    channel_roas = {}
+    if channel_perf_df is not None and not channel_perf_df.empty:
+        type_col = next(
+            (c for c in ["campaign_type", "ad_product", "ad product"] if c in channel_perf_df.columns),
+            None,
+        )
+        if type_col and "spend" in channel_perf_df.columns and "ad_sales" in channel_perf_df.columns:
+            work = channel_perf_df[[type_col, "spend", "ad_sales"]].copy()
+            work["spend"] = pd.to_numeric(work["spend"], errors="coerce").fillna(0.0)
+            work["ad_sales"] = pd.to_numeric(work["ad_sales"], errors="coerce").fillna(0.0)
+            work[type_col] = work[type_col].astype(str).str.strip().str.lower()
+            aliases = {
+                "sp": "Sponsored Products",
+                "sponsored products": "Sponsored Products",
+                "sponsored product": "Sponsored Products",
+                "sb": "Sponsored Brands",
+                "sponsored brands": "Sponsored Brands",
+                "sponsored brand": "Sponsored Brands",
+                "sd": "Sponsored Display",
+                "sponsored display": "Sponsored Display",
+                "sponsored displays": "Sponsored Display",
+            }
+            work["_channel"] = work[type_col].map(aliases)
+            work = work.dropna(subset=["_channel"])
+            if not work.empty:
+                grouped = work.groupby("_channel")[["spend", "ad_sales"]].sum()
+                for ch, row in grouped.iterrows():
+                    if row["spend"] > 0:
+                        channel_roas[ch] = float(row["ad_sales"] / row["spend"])
+
+    overall_roas = (baseline_sales / baseline_spend) if baseline_spend > 0 else 0.0
+
+    # Fill missing channel ROAS with a relative index against the account ROAS.
+    for ch, idx in default_index.items():
+        if ch not in channel_roas:
+            channel_roas[ch] = overall_roas * idx if overall_roas > 0 else idx
+
+    proposed_roas = sum(
+        float(weight) * channel_roas.get(ch, overall_roas or 1.0)
+        for ch, weight in channel_split.items()
+    )
+    if overall_roas <= 0 or proposed_roas <= 0:
+        return 1.0
+    return float(np.clip(proposed_roas / overall_roas, 0.50, 1.50))
+
+
+# ---------------------------------------------------------------------------
 # Core Forecast Engine
 # ---------------------------------------------------------------------------
 
@@ -40,6 +115,7 @@ def run_forecast(
     custom_channel_split: Optional[dict] = None,
     target_acos_override: Optional[float] = None,
     campaign_df: Optional[pd.DataFrame] = None,
+    channel_perf_df: Optional[pd.DataFrame] = None,
     # Custom target overrides — any one of these pins that metric directly
     override_target_revenue: Optional[float] = None,
     override_ad_spend: Optional[float] = None,
@@ -67,6 +143,11 @@ def run_forecast(
     current_tacos = (total_ad_spend / baseline_revenue * 100) if baseline_revenue > 0 else None
     current_roas  = (total_ad_sales / total_ad_spend) if total_ad_spend > 0 else None
 
+    # Channel mix is a real forecast driver, not just a visualization split.
+    mix_efficiency = _channel_mix_efficiency(
+        channel_split, channel_perf_df, total_ad_spend, total_ad_sales
+    )
+
     # ---- Step 1: resolve target_revenue ----------------------------------
     if override_target_revenue and override_target_revenue > 0:
         target_revenue = override_target_revenue
@@ -84,7 +165,7 @@ def run_forecast(
             ad_contribution_ratio = min(total_ad_sales / baseline_revenue, 0.90)
         else:
             ad_contribution_ratio = 0.40
-        incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio
+        incremental_ad_sales_needed = revenue_gap * ad_contribution_ratio * mix_efficiency
         target_ad_sales = total_ad_sales + incremental_ad_sales_needed
 
     # ---- Step 3: resolve recommended_spend --------------------------------
@@ -102,6 +183,14 @@ def run_forecast(
         if target_acos_override:
             effective_acos = target_acos_override
         recommended_spend = target_ad_sales * (effective_acos / 100)
+
+    # If the user pins ad spend but leaves ad sales free, estimate the
+    # sales produced by that spend using the proposed channel mix efficiency.
+    if override_ad_spend and override_ad_spend > 0 and not (override_ad_sales and override_ad_sales > 0):
+        if total_ad_spend > 0:
+            target_ad_sales = total_ad_sales * (recommended_spend / total_ad_spend) * mix_efficiency
+        elif current_roas:
+            target_ad_sales = recommended_spend * current_roas * mix_efficiency
 
     # ---- Derived metrics -------------------------------------------------
     incremental_spend    = recommended_spend - total_ad_spend
@@ -182,6 +271,7 @@ def run_multi_scenario(
     growth_scenarios: list,
     custom_channel_split: Optional[dict] = None,
     campaign_df: Optional[pd.DataFrame] = None,
+    channel_perf_df: Optional[pd.DataFrame] = None,
 ) -> list:
     """Run forecast for multiple growth scenarios and return a list of results."""
     return [
@@ -192,6 +282,7 @@ def run_multi_scenario(
             growth_pct=g,
             custom_channel_split=custom_channel_split,
             campaign_df=campaign_df,
+            channel_perf_df=channel_perf_df,
         )
         for g in growth_scenarios
     ]
