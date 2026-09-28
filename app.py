@@ -870,9 +870,9 @@ def sidebar():
         🎯 Channel Budget Split
     </div>""", unsafe_allow_html=True)
 
-    # All three channels are editable. When any one slider changes, the other
-    # two automatically rebalance from the remaining budget while preserving
-    # SP > SB > SD and an exact 100% total.
+    # Three editable sliders. We use separate temporary widget keys and
+    # permanent channel values so a callback can safely update the other two
+    # sliders before Streamlit renders them again.
     _channel_defaults = {
         "channel_sp_pct": 65.0,
         "channel_sb_pct": 25.0,
@@ -882,49 +882,73 @@ def sidebar():
         if _key not in st.session_state:
             st.session_state[_key] = _value
 
+    _widget_keys = {
+        "Sponsored Products": "_channel_sp_pct",
+        "Sponsored Brands": "_channel_sb_pct",
+        "Sponsored Display": "_channel_sd_pct",
+    }
+
+    # Load the permanent values into the temporary widget keys before the
+    # widgets are instantiated. This avoids the stale-label/state mismatch.
+    for _channel, _widget_key in _widget_keys.items():
+        st.session_state[_widget_key] = float(
+            st.session_state[_channel.replace("Sponsored Products", "channel_sp_pct")
+                                      .replace("Sponsored Brands", "channel_sb_pct")
+                                      .replace("Sponsored Display", "channel_sd_pct")]
+        )
+
     def _channel_slider_changed(changed_channel: str):
-        _keys = {
-            "Sponsored Products": "channel_sp_pct",
-            "Sponsored Brands": "channel_sb_pct",
-            "Sponsored Display": "channel_sd_pct",
-        }
         _current = {
-            "Sponsored Products": st.session_state[_keys["Sponsored Products"]] / 100.0,
-            "Sponsored Brands": st.session_state[_keys["Sponsored Brands"]] / 100.0,
-            "Sponsored Display": st.session_state[_keys["Sponsored Display"]] / 100.0,
+            "Sponsored Products": st.session_state["channel_sp_pct"] / 100.0,
+            "Sponsored Brands": st.session_state["channel_sb_pct"] / 100.0,
+            "Sponsored Display": st.session_state["channel_sd_pct"] / 100.0,
         }
+        _changed_value = st.session_state[_widget_keys[changed_channel]]
+
         _result = rebalance_channel_split(
             changed_channel,
-            st.session_state[_keys[changed_channel]],
+            _changed_value,
             _current,
         )
-        for _channel, _weight in _result.items():
-            st.session_state[_keys[_channel]] = round(_weight * 100.0, 1)
 
-    sp_pct = st.sidebar.slider(
+        for _channel, _weight in _result.items():
+            _pct = round(_weight * 100.0, 1)
+            _perm_key = {
+                "Sponsored Products": "channel_sp_pct",
+                "Sponsored Brands": "channel_sb_pct",
+                "Sponsored Display": "channel_sd_pct",
+            }[_channel]
+            st.session_state[_perm_key] = _pct
+            st.session_state[_widget_keys[_channel]] = _pct
+
+    st.sidebar.slider(
         "Sponsored Products %",
-        min_value=34, max_value=99, step=1,
-        key="channel_sp_pct",
+        min_value=35.0, max_value=99.0, step=1.0,
+        key="_channel_sp_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Products",),
         help="Change SP. SB and SD automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
     )
-    sb_pct = st.sidebar.slider(
+    st.sidebar.slider(
         "Sponsored Brands %",
-        min_value=1, max_value=49, step=1,
-        key="channel_sb_pct",
+        min_value=1.0, max_value=49.0, step=1.0,
+        key="_channel_sb_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Brands",),
         help="Change SB. SP and SD automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
     )
-    sd_pct = st.sidebar.slider(
+    st.sidebar.slider(
         "Sponsored Display %",
-        min_value=1, max_value=32, step=1,
-        key="channel_sd_pct",
+        min_value=1.0, max_value=32.0, step=1.0,
+        key="_channel_sd_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Display",),
         help="Change SD. SP and SB automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
     )
+
+    sp_pct = float(st.session_state["channel_sp_pct"])
+    sb_pct = float(st.session_state["channel_sb_pct"])
+    sd_pct = float(st.session_state["channel_sd_pct"])
 
     channel_split = {
         "Sponsored Products": sp_pct / 100.0,
@@ -944,7 +968,7 @@ def sidebar():
         <span>SD {sd_pct:.1f}%</span>
     </div>
     <div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:6px;line-height:1.4;">
-        Change any slider • SP &gt; SB &gt; SD • Total = 100%
+        Change any slider • SP &gt; SB &gt; SD • Total = {sp_pct + sb_pct + sd_pct:.1f}%
     </div>
     """, unsafe_allow_html=True)
 
