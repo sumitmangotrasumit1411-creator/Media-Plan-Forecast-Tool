@@ -36,7 +36,7 @@ from insights import (
     product_intelligence, bid_strategy_analysis, ad_product_analysis,
 )
 from trends import build_trend_df, trend_summary, ad_product_trend
-from forecast import auto_channel_split
+from forecast import rebalance_channel_split
 
 from pages.tab_metrics         import render_metrics_dashboard
 from pages.tab_product         import render_product_tab
@@ -870,40 +870,83 @@ def sidebar():
         🎯 Channel Budget Split
     </div>""", unsafe_allow_html=True)
 
-    # SP is the primary editable control. SB and SD automatically rebalance
-    # from the remaining 100%, while always preserving SP > SB > SD.
+    # All three channels are editable. When any one slider changes, the other
+    # two automatically rebalance from the remaining budget while preserving
+    # SP > SB > SD and an exact 100% total.
+    _channel_defaults = {
+        "channel_sp_pct": 65.0,
+        "channel_sb_pct": 25.0,
+        "channel_sd_pct": 10.0,
+    }
+    for _key, _value in _channel_defaults.items():
+        if _key not in st.session_state:
+            st.session_state[_key] = _value
+
+    def _channel_slider_changed(changed_channel: str):
+        _keys = {
+            "Sponsored Products": "channel_sp_pct",
+            "Sponsored Brands": "channel_sb_pct",
+            "Sponsored Display": "channel_sd_pct",
+        }
+        _current = {
+            "Sponsored Products": st.session_state[_keys["Sponsored Products"]] / 100.0,
+            "Sponsored Brands": st.session_state[_keys["Sponsored Brands"]] / 100.0,
+            "Sponsored Display": st.session_state[_keys["Sponsored Display"]] / 100.0,
+        }
+        _result = rebalance_channel_split(
+            changed_channel,
+            st.session_state[_keys[changed_channel]],
+            _current,
+        )
+        for _channel, _weight in _result.items():
+            st.session_state[_keys[_channel]] = round(_weight * 100.0, 1)
+
     sp_pct = st.sidebar.slider(
         "Sponsored Products %",
-        35, 100, 65,
+        min_value=34, max_value=99, step=1,
         key="channel_sp_pct",
-        help="Set the Sponsored Products share. Sponsored Brands and Sponsored Display automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
+        on_change=_channel_slider_changed,
+        args=("Sponsored Products",),
+        help="Change SP. SB and SD automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
+    )
+    sb_pct = st.sidebar.slider(
+        "Sponsored Brands %",
+        min_value=1, max_value=49, step=1,
+        key="channel_sb_pct",
+        on_change=_channel_slider_changed,
+        args=("Sponsored Brands",),
+        help="Change SB. SP and SD automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
+    )
+    sd_pct = st.sidebar.slider(
+        "Sponsored Display %",
+        min_value=1, max_value=32, step=1,
+        key="channel_sd_pct",
+        on_change=_channel_slider_changed,
+        args=("Sponsored Display",),
+        help="Change SD. SP and SB automatically rebalance while keeping SP > SB > SD and total budget at 100%.",
     )
 
-    channel_split = auto_channel_split(sp_pct)
-    sp_w = channel_split["Sponsored Products"]
-    sb_w = channel_split["Sponsored Brands"]
-    sd_w = channel_split["Sponsored Display"]
-    sb_pct = sb_w * 100.0
-    sd_pct = sd_w * 100.0
+    channel_split = {
+        "Sponsored Products": sp_pct / 100.0,
+        "Sponsored Brands": sb_pct / 100.0,
+        "Sponsored Display": sd_pct / 100.0,
+    }
 
-    # Visual split bar
     st.sidebar.markdown(f"""
     <div style="margin:6px 0 12px;background:rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;height:8px;display:flex;">
-        <div style="width:{sp_w*100:.1f}%;background:#4f46e5;"></div>
-        <div style="width:{sb_w*100:.1f}%;background:#f97316;"></div>
-        <div style="width:{sd_w*100:.1f}%;background:#10b981;"></div>
+        <div style="width:{sp_pct:.1f}%;background:#4f46e5;"></div>
+        <div style="width:{sb_pct:.1f}%;background:#f97316;"></div>
+        <div style="width:{sd_pct:.1f}%;background:#10b981;"></div>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.65);">
-        <span>SP {sp_w*100:.1f}%</span>
-        <span>SB {sb_w*100:.1f}%</span>
-        <span>SD {sd_w*100:.1f}%</span>
+        <span>SP {sp_pct:.1f}%</span>
+        <span>SB {sb_pct:.1f}%</span>
+        <span>SD {sd_pct:.1f}%</span>
     </div>
     <div style="font-size:10px;color:rgba(255,255,255,0.45);margin-top:6px;line-height:1.4;">
-        SP > SB > SD • SB + SD auto-balance the remaining budget • Total = 100%
+        Change any slider • SP &gt; SB &gt; SD • Total = 100%
     </div>
     """, unsafe_allow_html=True)
-
-    # channel_split is already normalized by auto_channel_split().
 
     st.sidebar.markdown("---")
 
