@@ -67,10 +67,32 @@ jobs:
           from config.settings import settings
           from utils.formatters import fmt_currency, fmt_pct, fmt_num
           from services.file_service import validate_uploaded_file
+          import pandas as pd
           from forecast import run_forecast
           r = run_forecast(500000, 50000, 200000, 10.0)
           assert r['target_revenue'] > 500000
-          print('✓ All imports and smoke tests passed')
+
+          channel_df = pd.DataFrame({
+              'ad_product': ['Sponsored Products', 'Sponsored Brands', 'Sponsored Display'],
+              'spend': [35000, 10000, 5000],
+              'ad_sales': [175000, 35000, 10000],
+          })
+          mix_a = run_forecast(
+              500000, 50000, 200000, 10.0,
+              custom_channel_split={'Sponsored Products': .65, 'Sponsored Brands': .25, 'Sponsored Display': .10},
+              channel_perf_df=channel_df,
+          )
+          mix_b = run_forecast(
+              500000, 50000, 200000, 10.0,
+              custom_channel_split={'Sponsored Products': .30, 'Sponsored Brands': .30, 'Sponsored Display': .40},
+              channel_perf_df=channel_df,
+          )
+          assert mix_a['target_ad_sales'] != mix_b['target_ad_sales'], 'Channel split must change forecast'
+
+          custom = run_forecast(500000, 50000, 200000, 10.0, override_target_revenue=750000)
+          assert custom['target_revenue'] == 750000
+          assert custom['recommended_spend'] != r['recommended_spend'], 'Custom target must change forecast'
+          print('✓ All imports and interactive forecast smoke tests passed')
           "
 
   # ── 3. Docker build (on push to main only) ───────────────────────────────────
