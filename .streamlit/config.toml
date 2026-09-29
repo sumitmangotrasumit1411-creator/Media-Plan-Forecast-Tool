@@ -13,6 +13,9 @@ port             = 8501
 fastReruns       = true
 magicEnabled     = false         # disable magic commands for performance
 
+[client]
+showSidebarNavigation = false
+
 [browser]
 gatherUsageStats = false         # no telemetry
 
