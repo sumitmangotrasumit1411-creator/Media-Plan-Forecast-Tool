@@ -488,6 +488,14 @@ button[data-testid="collapsedControl"]:hover {
     box-shadow: 0 4px 16px rgba(79,70,229,0.35) !important;
     transition: all 0.2s ease !important; letter-spacing: 0.2px !important;
 }
+[data-testid="stDownloadButton"] button * {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+[data-testid="stDownloadButton"] button:focus-visible {
+    outline: 3px solid #f97316 !important;
+    outline-offset: 3px !important;
+}
 [data-testid="stDownloadButton"] button:hover {
     box-shadow: 0 6px 24px rgba(79,70,229,0.45) !important;
     transform: translateY(-2px) !important;
