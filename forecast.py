@@ -48,92 +48,55 @@ def auto_channel_split(sp_pct: float) -> dict:
     }
 
 
-def rebalance_channel_split(
-    changed_channel: str,
-    changed_pct: float,
-    current_split: Optional[dict] = None,
-) -> dict:
-    """Rebalance the other two channels after one slider changes.
+def exact_channel_split(sp: float, sb: float, sd: float) -> dict:
+    """Validate a complete allocation without changing the entered percentages."""
+    values = [float(sp), float(sb), float(sd)]
+    if not all(np.isfinite(v) for v in values) or not (sp > sb > sd >= 0):
+        raise ValueError("Allocation must satisfy SP > SB > SD ≥ 0.")
+    if abs(sum(values) - 100) > 1e-9:
+        raise ValueError("Allocation must total exactly 100%.")
+    return dict(zip(DEFAULT_CHANNEL_SPLIT, [v / 100 for v in values]))
 
-    The changed channel keeps the user's requested percentage (within the
-    feasible range). The other two receive the remaining budget in proportion
-    to their previous shares, then are constrained so SP > SB > SD and the
-    three channels sum to exactly 100%.
+
+def rebalance_channel_split(changed_channel, changed_pct, current_split=None):
+    """Project onto a feasible 0.1% grid, preserving the edited share when feasible.
+
+    The remainder follows the previous ratio, constrained by strict ordering.
+    Integer tenths avoid rounding the three controls independently.
     """
-    current = current_split or DEFAULT_CHANNEL_SPLIT
-    old = {
-        "Sponsored Products": float(current.get("Sponsored Products", 0.65)) * 100.0,
-        "Sponsored Brands": float(current.get("Sponsored Brands", 0.25)) * 100.0,
-        "Sponsored Display": float(current.get("Sponsored Display", 0.10)) * 100.0,
-    }
-
-    ch = str(changed_channel)
-    p = float(changed_pct)
-
-    if ch == "Sponsored Products":
-        # Keep enough room for SB > SD while SP remains the largest.
-        p = min(max(p, 35.0), 99.0)
-        remaining = 100.0 - p
-        ratio = old["Sponsored Brands"] / max(
-            old["Sponsored Brands"] + old["Sponsored Display"], 0.001
-        )
-        sb = remaining * ratio
-        sd = remaining - sb
-
-        # If the proportional result violates the ordering, use the closest
-        # valid split while keeping the requested SP fixed.
-        if sb >= p or sb <= sd:
-            sb = min(p - 1.0, max(sd + 1.0, remaining * 0.70))
-            sd = remaining - sb
-            if sd >= sb:
-                sb = (remaining + 1.0) / 2.0
-                sd = remaining - sb
-
-    elif ch == "Sponsored Brands":
-        p = min(max(p, 1.0), 49.0)
-        remaining = 100.0 - p
-        ratio = old["Sponsored Products"] / max(
-            old["Sponsored Products"] + old["Sponsored Display"], 0.001
-        )
-        sp = remaining * ratio
-        sd = remaining - sp
-
-        if sp <= p or sd >= p:
-            # Give SP the largest feasible share and SD the smallest feasible
-            # remainder while keeping the requested SB fixed.
-            sp = max(p + 1.0, remaining * 0.80)
-            sp = min(sp, remaining - 1.0)
-            sd = remaining - sp
-            if sd >= p:
-                sd = p - 1.0
-                sp = remaining - sd
-
-        return {
-            "Sponsored Products": round(sp / 100.0, 4),
-            "Sponsored Brands": round(p / 100.0, 4),
-            "Sponsored Display": round(sd / 100.0, 4),
-        }
-
+    channels = list(DEFAULT_CHANNEL_SPLIT)
+    if changed_channel not in channels or not np.isfinite(changed_pct):
+        raise ValueError("A known channel and finite percentage are required.")
+    old = _normalise_channel_split(current_split)
+    i = channels.index(changed_channel)
+    bounds = [(335, 999), (1, 499), (0, 332)]
+    p = min(max(round(changed_pct * 10), bounds[i][0]), bounds[i][1])
+    remainder = 1000 - p
+    if i == 0:
+        ratio = old[channels[1]] / max(old[channels[1]] + old[channels[2]], 1e-12)
+        sb = min(max(round(remainder * ratio), remainder // 2 + 1), min(p - 1, remainder))
+        values = [p, sb, remainder - sb]
+    elif i == 1:
+        ratio = old[channels[2]] / max(old[channels[0]] + old[channels[2]], 1e-12)
+        sd = min(max(round(remainder * ratio), 0), min(p - 1, remainder - p - 1))
+        values = [remainder - sd, p, sd]
     else:
-        p = min(max(p, 1.0), 32.0)
-        remaining = 100.0 - p
-        ratio = old["Sponsored Products"] / max(
-            old["Sponsored Products"] + old["Sponsored Brands"], 0.001
-        )
-        sp = remaining * ratio
-        sb = remaining - sp
+        ratio = old[channels[1]] / max(old[channels[0]] + old[channels[1]], 1e-12)
+        sb = min(max(round(remainder * ratio), p + 1), (remainder - 1) // 2)
+        values = [remainder - sb, sb, p]
+    return dict(zip(channels, [v / 1000 for v in values]))
 
-        if sp <= sb or sb <= p:
-            # Keep SD fixed and split the remainder with a strict SP > SB > SD.
-            sb = max(p + 1.0, remaining * 0.30)
-            sb = min(sb, (remaining - 1.0) / 2.0)
-            sp = remaining - sb
 
-    return {
-        "Sponsored Products": round(sp / 100.0, 4) if ch != "Sponsored Products" else round(p / 100.0, 4),
-        "Sponsored Brands": round(sb / 100.0, 4) if ch != "Sponsored Brands" else round(p / 100.0, 4),
-        "Sponsored Display": round(sd / 100.0, 4) if ch != "Sponsored Display" else round(p / 100.0, 4),
-    }
+def allocate_money(total, weights):
+    """Largest-remainder allocation reconciles displayed amounts to the cent."""
+    cents = round(abs(total) * 100)
+    raw = np.asarray(weights, dtype=float)
+    raw = raw / raw.sum() * cents
+    parts = np.floor(raw).astype(int)
+    for i in sorted(range(len(parts)), key=lambda i: (-(raw[i] - parts[i]), i))[:cents - int(parts.sum())]:
+        parts[i] += 1
+    return [int(v) / 100 * (-1 if total < 0 else 1) for v in parts]
+
 
 def _normalise_channel_split(channel_split: Optional[dict]) -> dict:
     """Return a clean channel split whose weights always total exactly 100%."""
@@ -146,6 +109,8 @@ def _normalise_channel_split(channel_split: Optional[dict]) -> dict:
     total = sum(weights.values())
     if total <= 0:
         return DEFAULT_CHANNEL_SPLIT.copy()
+    if abs(total - 1.0) < 1e-12:
+        return weights
     return {channel: weight / total for channel, weight in weights.items()}
 
 
@@ -252,9 +217,10 @@ def run_forecast(
     Resolution order when multiple overrides supplied:
       1. override_target_revenue  — sets target revenue directly
       2. override_ad_sales        — pins target ad-attributed sales
-      3. override_roas            — derives spend from ad sales / roas
-      4. override_tacos           — derives spend from revenue * tacos%
-      5. override_ad_spend        — pins recommended spend directly
+      Spend precedence: explicit ad spend > ROAS > TACOS > growth model.
+      Explicit revenue and ad sales are always retained. With spend alone,
+      ad sales are estimated from baseline efficiency and channel mix.
+      Lower-priority spend targets are ignored, not presented as achieved.
     Any metric not pinned is derived from the others.
     """
     channel_split = _normalise_channel_split(custom_channel_split)
@@ -350,13 +316,15 @@ def run_forecast(
     baseline_org_contribution  = round(baseline_organic_sales / baseline_revenue * 100, 1) if baseline_revenue > 0 else 0
 
     # ---- Channel allocation ----------------------------------------------
+    budgets = allocate_money(recommended_spend, list(channel_split.values()))
+    increments = allocate_money(incremental_spend, list(channel_split.values()))
     channel_allocation = {
         ch: {
-            "budget": round(recommended_spend * weight, 2),
-            "incremental_budget": round(incremental_spend * weight, 2),
+            "budget": budgets[i],
+            "incremental_budget": increments[i],
             "share_pct": round(weight * 100, 1),
         }
-        for ch, weight in channel_split.items()
+        for i, (ch, weight) in enumerate(channel_split.items())
     }
 
     # ---- Top campaign recommendations ------------------------------------
@@ -432,7 +400,7 @@ def scenarios_to_dataframe(scenarios: list) -> pd.DataFrame:
     rows = []
     for s in scenarios:
         rows.append({
-            "Growth Target": f"+{s['growth_pct']}%",
+            "Growth Target": "Custom" if s.get("is_custom_scenario") else f"+{s['growth_pct']}%",
             "Target Revenue ($)": s["target_revenue"],
             "Revenue Gap ($)": s["revenue_gap"],
             "Rec. Ad Spend ($)": s["recommended_spend"],
@@ -499,7 +467,7 @@ def monthly_forecast(
     -------
     (DataFrame, int)  — monthly plan DataFrame + the actuals_year used (0 = none).
     """
-    channel_split = custom_channel_split or DEFAULT_CHANNEL_SPLIT
+    channel_split = _normalise_channel_split(custom_channel_split)
     growth_factor = 1 + growth_pct / 100
 
     # ── Build monthly actuals from trend_df ──────────────────────────────
@@ -595,13 +563,13 @@ def monthly_forecast(
     spend_weights = _build_projection_weights(actual_spend_values)
     sales_weights = _build_projection_weights(actual_sales_values)
 
-    if annual_spend_override and annual_spend_override > 0:
+    if annual_spend_override is not None:
         annual_proj_spend = float(annual_spend_override)
     else:
         actual_spend_total = sum(actual_spend_values)
         annual_proj_spend = actual_spend_total * growth_factor if actual_spend_total > 0 else 0.0
 
-    if annual_sales_override and annual_sales_override > 0:
+    if annual_sales_override is not None:
         annual_proj_sales = float(annual_sales_override)
     else:
         actual_sales_total = sum(actual_sales_values)
@@ -612,6 +580,8 @@ def monthly_forecast(
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     ]
 
+    projected_spends = allocate_money(annual_proj_spend, spend_weights)
+    projected_sales = allocate_money(annual_proj_sales, sales_weights)
     rows = []
     for idx, month_num in enumerate(range(1, 13)):
         # Pull month actuals from the pre-aggregated dict (sums all weekly rows)
@@ -632,24 +602,13 @@ def monthly_forecast(
         # ── Projected spend ──────────────────────────────────────────────
         # Always allocate the selected scenario's annual spend. Actual monthly
         # data only determines the seasonal shape of the projection.
-        proj_spend = (
-            round(annual_proj_spend * spend_weights[idx], 2)
-            if annual_proj_spend > 0 else 0.0
-        )
-
-        # ── Projected sales ──────────────────────────────────────────────
-        # Always allocate the selected scenario's annual ad sales. This keeps
-        # monthly projections synchronized with the scenario cards, charts and
-        # annual totals.
-        proj_sales = (
-            round(annual_proj_sales * sales_weights[idx], 2)
-            if annual_proj_sales > 0 else 0.0
-        )
+        proj_spend = projected_spends[idx]
+        proj_sales = projected_sales[idx]
 
         proj_acos = round(proj_spend / proj_sales * 100, 2) if proj_sales > 0 else None
         proj_roas = round(proj_sales / proj_spend, 2)       if proj_spend > 0 else None
 
-        ch_alloc = {ch: round(proj_spend * w, 2) for ch, w in channel_split.items()}
+        ch_alloc = dict(zip(channel_split, allocate_money(proj_spend, list(channel_split.values()))))
 
         rows.append({
             "Month":                  month_num,
@@ -671,6 +630,22 @@ def monthly_forecast(
             "SD Budget ($)":          ch_alloc.get("Sponsored Display", 0),
         })
 
+    # Reconcile channel columns to the annual allocation as well as each row.
+    budget_columns = ["SP Budget ($)", "SB Budget ($)", "SD Budget ($)"]
+    targets = allocate_money(annual_proj_spend, list(channel_split.values()))
+    matrix = [[round(row[c] * 100) for c in budget_columns] for row in rows]
+    differences = [round(targets[j] * 100) - sum(row[j] for row in matrix) for j in range(3)]
+    for destination in range(3):
+        while differences[destination] > 0:
+            source = next(j for j in range(3) if differences[j] < 0)
+            row = max(matrix, key=lambda row: row[source])
+            transfer = min(differences[destination], -differences[source], row[source])
+            row[source] -= transfer
+            row[destination] += transfer
+            differences[source] += transfer
+            differences[destination] -= transfer
+    for row, amounts in zip(rows, matrix):
+        row.update({c: amount / 100 for c, amount in zip(budget_columns, amounts)})
     return pd.DataFrame(rows), actuals_year
 
 

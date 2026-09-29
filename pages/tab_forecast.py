@@ -47,6 +47,7 @@ def render_forecast(
 
     baseline_revenue = total_ordered_revenue if total_ordered_revenue > 0 else total_ad_sales
 
+    st.session_state.pop("last_monthly_df", None)
     if baseline_revenue == 0:
         st.warning("No revenue data found. Please check your reports.")
         return []
@@ -62,7 +63,7 @@ def render_forecast(
         total_ordered_revenue=baseline_revenue,
         total_ad_spend=total_ad_spend,
         total_ad_sales=total_ad_sales,
-        growth_scenarios=growth_options,
+        growth_scenarios=growth_options or [10],
         custom_channel_split=channel_split,
         campaign_df=campaign_df if campaign_df is not None and not campaign_df.empty else None,
         channel_perf_df=channel_perf_df if channel_perf_df is not None and not channel_perf_df.empty else None,
@@ -95,7 +96,9 @@ def render_forecast(
             "tacos":          "TACOS %",
         }
         active_labels = " · ".join(label_map[k] for k in active)
-        st.info(f"🎯 **Custom scenario active** — pinned inputs: **{active_labels}**. All other metrics derived automatically.")
+        st.info(f"🎯 **Custom scenario active** — entered inputs: **{active_labels}**. "
+                "Revenue and ad sales are retained. Spend priority: Ad Spend > ROAS > TACOS. "
+                "Lower-priority spend targets are ignored; achieved ratios are recalculated.")
 
     # =========================================================================
     # BASELINE METRICS — immutable, always from uploaded reports
@@ -115,23 +118,19 @@ def render_forecast(
     baseline_cpo    = ads_metrics.get("cost_per_order") or 0
 
     # =========================================================================
-    # PROJECTED METRICS — always from forecast output, never from baseline
-    #
-    # Source priority:
-    #   1. Custom scenario (when sidebar targets are set)
-    #   2. First growth scenario (e.g. +10%) — ensures Current ≠ Projected
-    #
-    # The baseline is NEVER used as the projected value. When no scenario is
-    # selected, the first available growth scenario provides projected values.
+    # PROJECTED METRICS — one selection drives cards, charts, monthly and export.
+    # Editing or clearing custom targets resets selection to the new default.
     # =========================================================================
+    scenario_map = {f"+{s['growth_pct']}%": s for s in scenarios}
     if custom_scenario:
-        proj_scenario = custom_scenario
-    elif scenarios:
-        # Use the first growth scenario (+10% or lowest selected) as the
-        # default projection — so tiles always show a meaningful delta
-        proj_scenario = scenarios[0]
-    else:
-        proj_scenario = None
+        scenario_map = {"Custom": custom_scenario, **scenario_map}
+    target_signature = tuple(sorted(ct.items()))
+    if (st.session_state.get("forecast_target_signature") != target_signature
+            or st.session_state.get("forecast_scenario") not in scenario_map):
+        st.session_state["forecast_scenario"] = next(iter(scenario_map))
+    st.session_state["forecast_target_signature"] = target_signature
+    selected_label = st.selectbox("Forecast scenario", list(scenario_map), key="forecast_scenario")
+    proj_scenario = scenario_map[selected_label]
 
     if proj_scenario:
         proj_spend  = proj_scenario["recommended_spend"]
@@ -166,7 +165,7 @@ def render_forecast(
     proj_cpo      = round(proj_spend / proj_orders, 2) if proj_orders > 0 else baseline_cpo
 
     # Label for the active projection (used in section headers and table)
-    if custom_scenario:
+    if proj_scenario.get("is_custom_scenario"):
         proj_label = f"🎯 Custom (+{custom_scenario['growth_pct']:.1f}%)"
     elif proj_scenario:
         proj_label = f"📈 +{proj_scenario['growth_pct']:.0f}% Scenario"
@@ -295,7 +294,7 @@ def render_forecast(
     <div class="callout-banner">
         <strong>LEFT = Current (Uploaded Data)</strong> — always from your reports, never modified. &nbsp;|&nbsp;
         <strong>RIGHT = Projected ({proj_label})</strong> — forecast output.
-        Change the scenario selector below the table to see a different projection.
+        The forecast scenario selector controls every projected card, allocation and monthly output.
     </div>
     """, unsafe_allow_html=True)
 
@@ -436,7 +435,7 @@ def render_forecast(
         "Proj. Ad Spend ($)":  "${:,.0f}",
         "Incr. Ad Spend ($)":  "${:,.0f}",
         "Proj. ACOS (%)":      "{:.2f}%",
-        "Proj. ROAS":          "{:.2f}x",
+        "Proj. ROAS":          "${:.2f}",
         "Proj. TACOS (%)":     "{:.2f}%",
     }
 
@@ -564,8 +563,8 @@ def render_forecast(
         st.plotly_chart(fig_roas, use_container_width=True)
 
     # ── Channel Allocation ──────────────────────────────────────────────────────
-    primary       = custom_scenario if custom_scenario else next((s for s in scenarios if s["growth_pct"] == 10), scenarios[0])
-    primary_label = "Custom" if custom_scenario else f"+{primary['growth_pct']}%"
+    primary       = proj_scenario
+    primary_label = "Custom" if primary.get("is_custom_scenario") else f"+{primary['growth_pct']}%"
     st.markdown(f'<div class="section-header">💰 Projected Channel Budget Allocation — {primary_label} Scenario</div>', unsafe_allow_html=True)
 
     alloc_labels  = list(primary["channel_allocation"].keys())
@@ -611,35 +610,10 @@ def render_forecast(
     st.markdown("---")
     st.markdown('<div class="section-header">📅 Monthly Media Plan & High-Sales Events</div>', unsafe_allow_html=True)
 
-    scenario_labels = []
-    scenario_map    = {}
-
-    if custom_scenario:
-        cs_label_monthly = f"🎯 Custom ({'+' if custom_scenario['growth_pct'] >= 0 else ''}{custom_scenario['growth_pct']:.1f}%)"
-        scenario_labels.append(cs_label_monthly)
-        scenario_map[cs_label_monthly] = custom_scenario
-
-    for s in scenarios:
-        lbl = f"+{s['growth_pct']}%"
-        scenario_labels.append(lbl)
-        scenario_map[lbl] = s
-
-    if scenario_labels:
-        selected_label = st.selectbox(
-            "Select Scenario for Monthly Plan:",
-            options=scenario_labels,
-            index=0,
-            key="monthly_scenario_select",
-        )
-        sel_scenario      = scenario_map[selected_label]
-        sel_growth_pct    = sel_scenario["growth_pct"]
-        sel_annual_spend  = sel_scenario["recommended_spend"]
-        sel_annual_sales  = sel_scenario["target_ad_sales"]
-    else:
-        sel_growth_pct   = growth_options[0] if growth_options else 10
-        sel_annual_spend = active_spend
-        sel_annual_sales = active_sales
-        selected_label   = f"+{sel_growth_pct}%"
+    sel_scenario = proj_scenario
+    sel_growth_pct = sel_scenario["growth_pct"]
+    sel_annual_spend = sel_scenario["recommended_spend"]
+    sel_annual_sales = sel_scenario["target_ad_sales"]
 
     _mf_result = monthly_forecast(
         trend_df=trend_df,
@@ -828,11 +802,12 @@ def render_forecast(
         elif "ACOS" in c:
             fmt_map[c] = "{:.1f}%"
         elif "ROAS" in c:
-            fmt_map[c] = "{:.2f}x"
+            fmt_map[c] = "${:.2f}"
         elif "Uplift" in c:
             fmt_map[c] = "+{:.0f}%"
 
     styled = disp_df.style.format(fmt_map, na_rep="—").apply(_style_monthly_row, axis=1)
     st.dataframe(styled, use_container_width=True, height=494)
 
-    return scenarios
+    all_scenarios = ([custom_scenario] if custom_scenario else []) + scenarios
+    return [proj_scenario] + [s for s in all_scenarios if s is not proj_scenario]

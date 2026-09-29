@@ -1,11 +1,9 @@
 """
 pages/tab_metrics.py — Key Metrics Dashboard tab
-Phase 2: Richer KPI cards with status badges, efficiency score banner,
-improved gauge layout with contextual benchmarks.
+KPI cards with status badges and an efficiency score banner.
 """
 
 import streamlit as st
-import plotly.graph_objects as go
 
 from utils.formatters import fmt_currency, fmt_pct, fmt_num
 
@@ -222,80 +220,3 @@ def render_metrics_dashboard(ads_metrics: dict, vendor_metrics: dict) -> None:
         for i, (label, val, delta) in enumerate(kpis_vendor):
             with cols2[i % len(cols2)]:
                 st.markdown(_metric_card(label, val, delta), unsafe_allow_html=True)
-
-    # ── Performance gauges ────────────────────────────────────────────────
-    if acos_val is not None or roas_val is not None:
-        st.markdown('<div class="section-header">📈 Performance Gauges</div>', unsafe_allow_html=True)
-
-        # Callout with benchmark context
-        st.markdown("""
-        <div class="callout-banner">
-            <strong>Industry Benchmarks:</strong>
-            ACOS: &nbsp;🟢 &lt;20% excellent · 🟡 20–35% acceptable · 🔴 &gt;35% high &nbsp;|&nbsp;
-            ROAS: &nbsp;🔴 &lt;2x minimum · 🟡 2–4x adequate · 🟢 &gt;4x strong
-        </div>
-        """, unsafe_allow_html=True)
-
-        gcols = st.columns(2)
-
-        if acos_val is not None:
-            with gcols[0]:
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number+delta",
-                    value=acos_val,
-                    number={"suffix": "%", "font": {"size": 36, "color": "#1e1b4b"}},
-                    title={"text": "ACOS — Target: ≤25%", "font": {"size": 14, "color": "#6b7280"}},
-                    delta={"reference": 25, "decreasing": {"color": "#10b981"}, "increasing": {"color": "#dc2626"},
-                           "suffix": "pp vs 25% benchmark"},
-                    gauge={
-                        "axis": {"range": [0, 80], "tickcolor": "#9ca3af", "tickfont": {"size": 11}},
-                        "bar": {"color": "#4f46e5", "thickness": 0.25},
-                        "bgcolor": "#f8fafc",
-                        "borderwidth": 0,
-                        "steps": [
-                            {"range": [0, 20],  "color": "#d1fae5"},
-                            {"range": [20, 35], "color": "#fef3c7"},
-                            {"range": [35, 80], "color": "#fee2e2"},
-                        ],
-                        "threshold": {
-                            "line": {"color": "#f97316", "width": 3},
-                            "thickness": 0.85, "value": 35,
-                        },
-                    },
-                ))
-                fig.update_layout(
-                    height=300, margin=dict(t=50, b=10, l=30, r=30),
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-        if roas_val is not None:
-            with gcols[1]:
-                fig2 = go.Figure(go.Indicator(
-                    mode="gauge+number+delta",
-                    value=roas_val,
-                    number={"suffix": "x", "font": {"size": 36, "color": "#1e1b4b"}},
-                    title={"text": "ROAS — Target: ≥4x", "font": {"size": 14, "color": "#6b7280"}},
-                    delta={"reference": 4, "increasing": {"color": "#10b981"}, "decreasing": {"color": "#dc2626"},
-                           "suffix": "x vs 4x target"},
-                    gauge={
-                        "axis": {"range": [0, 10], "tickcolor": "#9ca3af", "tickfont": {"size": 11}},
-                        "bar": {"color": "#f97316", "thickness": 0.25},
-                        "bgcolor": "#f8fafc",
-                        "borderwidth": 0,
-                        "steps": [
-                            {"range": [0, 2],  "color": "#fee2e2"},
-                            {"range": [2, 4],  "color": "#fef3c7"},
-                            {"range": [4, 10], "color": "#d1fae5"},
-                        ],
-                        "threshold": {
-                            "line": {"color": "#10b981", "width": 3},
-                            "thickness": 0.85, "value": 4,
-                        },
-                    },
-                ))
-                fig2.update_layout(
-                    height=300, margin=dict(t=50, b=10, l=30, r=30),
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig2, use_container_width=True)

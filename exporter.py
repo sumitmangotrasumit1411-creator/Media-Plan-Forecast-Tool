@@ -103,6 +103,10 @@ def build_excel_media_plan(
         sc_df = scenarios_to_dataframe(scenarios)
         sc_df.to_excel(writer, sheet_name="Executive Summary", index=False, startrow=15)
         ws.set_row(15, 20, header_fmt)
+        for col, name in enumerate(sc_df.columns):
+            if "ROAS" in name:
+                ws.set_column(col, col, 22, currency_fmt)
+        ws.write(17 + len(sc_df), 0, "Active forecast = first scenario; Monthly Media Plan uses this scenario.")
 
         # ==================================================================
         # Sheet 2 — Scenario Deep Dive
@@ -110,7 +114,7 @@ def build_excel_media_plan(
         rows = []
         for s in scenarios:
             row = {
-                "Growth Target": f"+{s['growth_pct']}%",
+                "Growth Target": "Custom" if s.get("is_custom_scenario") else f"+{s['growth_pct']}%",
                 "Baseline Revenue ($)": s["baseline_revenue"],
                 "Target Revenue ($)": s["target_revenue"],
                 "Revenue Gap ($)": s["revenue_gap"],
@@ -131,6 +135,9 @@ def build_excel_media_plan(
         ws2 = writer.sheets["Scenarios"]
         ws2.set_row(0, 20, header_fmt)
         ws2.set_column("A:Z", 22)
+        for col, name in enumerate(pd.DataFrame(rows).columns):
+            if "ROAS" in name:
+                ws2.set_column(col, col, 22, currency_fmt)
 
         # The workbook intentionally contains only the leadership-facing
         # outputs requested by the user: Executive Summary, Scenarios, and
@@ -178,6 +185,11 @@ def build_excel_media_plan(
             ws7.set_column("B:B", 14)   # Month name
             ws7.set_column("C:C", 22)   # Events
             ws7.set_column("D:P", 20)
+            for col, name in enumerate(monthly_export.columns):
+                if "ROAS" in name:
+                    for row, value in enumerate(monthly_export[name], 1):
+                        if pd.notna(value):
+                            ws7.write_number(row, col, value, currency_fmt)
 
             # Highlight event months and totals row
             if "Event Month?" in monthly_export.columns:

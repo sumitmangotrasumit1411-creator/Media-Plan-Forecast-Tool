@@ -36,7 +36,8 @@ from insights import (
     product_intelligence, bid_strategy_analysis, ad_product_analysis,
 )
 from trends import build_trend_df, trend_summary, ad_product_trend
-from forecast import rebalance_channel_split
+from html import escape
+from forecast import rebalance_channel_split, exact_channel_split
 
 from pages.tab_metrics         import render_metrics_dashboard
 from pages.tab_product         import render_product_tab
@@ -810,7 +811,7 @@ def sidebar():
             overflow-wrap:anywhere;word-break:break-word;white-space:normal;">
             <span style="display:block;color:#4f46e5;font-size:10px;
             font-weight:800;margin-bottom:3px;">SELECTED AMAZON ADS FILE</span>
-            <span style="display:block;color:#1e1b4b;">{ads_file.name}</span>
+            <span style="display:block;color:#1e1b4b;">{escape(ads_file.name)}</span>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -832,7 +833,7 @@ def sidebar():
             f"""<div style="background:#ffffff;color:#1e1b4b;border-radius:8px;
             padding:7px 10px;margin:-6px 0 10px 0;font-size:11px;font-weight:700;
             line-height:1.35;word-break:break-all;border:1px solid #c7d2fe;">
-            📄 {vendor_file.name}</div>""",
+            📄 {escape(vendor_file.name)}</div>""",
             unsafe_allow_html=True,
         )
 
@@ -930,10 +931,33 @@ def sidebar():
             }[_channel]
             st.session_state[_perm_key] = _pct
             st.session_state[_widget_keys[_channel]] = _pct
+            st.session_state["exact_" + _perm_key.split("_")[1]] = _pct
+        st.session_state.pop("allocation_error", None)
+
+    def _apply_exact_split():
+        try:
+            result = exact_channel_split(*(st.session_state[f"exact_{ch}"] for ch in ("sp", "sb", "sd")))
+        except ValueError as exc:
+            st.session_state["allocation_error"] = str(exc)
+            return
+        for ch, value in zip(("sp", "sb", "sd"), result.values()):
+            st.session_state[f"channel_{ch}_pct"] = value * 100
+            st.session_state[f"_channel_{ch}_pct"] = value * 100
+        st.session_state.pop("allocation_error", None)
+
+    with st.sidebar.expander("Enter an exact allocation"):
+        with st.form("exact_allocation"):
+            for ch in ("sp", "sb", "sd"):
+                st.number_input(f"Exact {ch.upper()} %", min_value=0.0, max_value=100.0,
+                                value=st.session_state[f"channel_{ch}_pct"], step=0.1,
+                                key=f"exact_{ch}")
+            st.form_submit_button("Apply exact allocation", on_click=_apply_exact_split)
+        if st.session_state.get("allocation_error"):
+            st.error(st.session_state["allocation_error"])
 
     st.sidebar.slider(
         "Sponsored Products %",
-        min_value=35.0, max_value=99.0, step=1.0,
+        min_value=33.5, max_value=99.9, step=0.1,
         key="_channel_sp_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Products",),
@@ -941,7 +965,7 @@ def sidebar():
     )
     st.sidebar.slider(
         "Sponsored Brands %",
-        min_value=1.0, max_value=49.0, step=1.0,
+        min_value=0.1, max_value=49.9, step=0.1,
         key="_channel_sb_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Brands",),
@@ -949,7 +973,7 @@ def sidebar():
     )
     st.sidebar.slider(
         "Sponsored Display %",
-        min_value=1.0, max_value=32.0, step=1.0,
+        min_value=0.0, max_value=33.2, step=0.1,
         key="_channel_sd_pct",
         on_change=_channel_slider_changed,
         args=("Sponsored Display",),
@@ -991,7 +1015,7 @@ def sidebar():
         🎯 Custom Scenario Targets
     </div>
     <div style="font-size:11.5px;color:rgba(255,255,255,0.45);margin-bottom:10px;line-height:1.5;">
-        Leave at 0 to use growth % math. Set any value to pin that metric.
+        Leave at 0 to clear a target. Revenue and ad sales are retained when entered. Spend priority: Ad Spend, then ROAS, then TACOS. Lower-priority spend targets are ignored.
     </div>""", unsafe_allow_html=True)
 
     custom_target_revenue = st.sidebar.number_input(
@@ -1093,10 +1117,11 @@ def main():
             </div>
             <div class="welcome-card">
                 <div class="welcome-card-num">3</div>
-                <div class="welcome-card-title">6 Insight Tabs Instantly</div>
+                <div class="welcome-card-title">Up to 5 Insight Tabs</div>
                 <div class="welcome-card-desc">
                     Key Metrics · Product Intelligence · Trend Analysis ·
-                    Forecast &amp; Media Plan · Recommendations · How It Works.
+                    Forecast &amp; Media Plan · How It Works. Large Ads reports use a focused
+                    3-tab view: Key Metrics, Forecast &amp; Media Plan, and How It Works.
                 </div>
                 <span class="welcome-card-tag">ACOS · ROAS · TACOS</span>
             </div>
@@ -1122,8 +1147,8 @@ def main():
                 <div class="welcome-card-num">6</div>
                 <div class="welcome-card-title">Download Excel Media Plan</div>
                 <div class="welcome-card-desc">
-                    5-sheet workbook: Executive Summary, Scenarios,
-                    Campaign Recommendations, Campaign Performance, ASIN Analysis.
+                    3-sheet workbook: Executive Summary, Scenarios, and Monthly Media Plan.
+                    Includes your selected forecast, custom scenarios, and monthly channel budgets.
                 </div>
                 <span class="welcome-card-tag">Board-ready export</span>
             </div>
@@ -1316,6 +1341,7 @@ def main():
             render_trend_tab(trend_df, t_summary, prod_trend_df)
 
     scenarios = []
+    st.session_state.pop("last_monthly_df", None)
     with tab4:
         if ads_df is not None or vendor_df is not None:
             scenarios = render_forecast(
